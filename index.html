@@ -43,7 +43,16 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 <div class="sub"><span id="eat"></span><span id="prot"></span></div>
 </header>
 <section id="v1">
+<div class="row" style="display:block;margin-bottom:12px" aria-label="飲水紀錄">
+  <b>喝水紀錄</b> <span id="water-total" aria-live="polite"></span>
+  <div class="bar"><i id="water-bar"></i></div>
+  <div class="chips" style="margin:10px 0"><button type="button" id="water-250">＋250 ml</button><button type="button" id="water-500">＋500 ml</button></div>
+  <div style="display:flex;gap:6px;margin-bottom:8px"><input id="water-amount" type="number" min="1" max="10000" step="1" inputmode="numeric" placeholder="自訂 ml" aria-label="自訂飲水量" style="width:100%;min-width:0"><button type="button" id="water-add">增加</button><button type="button" id="water-sub">扣除</button></div>
+  <div style="display:flex;gap:6px;align-items:center"><label for="water-goal">每日目標</label><input id="water-goal" type="number" min="1" max="10000" step="1" inputmode="numeric" aria-label="每日飲水目標 ml" style="width:110px"><span>ml</span><button type="button" id="water-save-goal">儲存目標</button></div>
+  <small id="water-status" aria-live="polite"></small><button type="button" id="water-retry" hidden style="margin-top:6px">重試同步</button>
+</div>
 <div class="chips" id="meals"></div>
+<input type="search" id="food-search" placeholder="搜尋食物名稱（跨分類）" aria-label="搜尋食物名稱" autocomplete="off" style="width:100%;margin-bottom:10px">
 <div class="chips scroll" id="cats"></div>
 <div id="foods"></div>
 <button id="newf" style="width:100%;margin-top:6px">＋ 新食物 / 拍照估算</button>
@@ -66,20 +75,68 @@ const r1=x=>+(x||0).toFixed(1), num=x=>x===''||x==null?0:+x;
 const h=new Date().getHours();
 let S={foods:[],log:[],body:[],cat:'',date:ymd(),pw:localStorage.pw||'',meal:h<5?'宵夜':h<11?'早餐':h<14?'午餐':h<17?'點心':h<21?'晚餐':'宵夜'};
 let Q=JSON.parse(localStorage.q||'[]');
-
+let WQ=JSON.parse(localStorage.waterQueue||'[]'), WC=JSON.parse(localStorage.waterCache||'{}');
+let waterRevision=0, waterSyncing=false, waterProblem='';
+const waterGoal=()=>{const n=Number(localStorage.waterGoal);return Number.isInteger(n)&&n>0&&n<=10000?n:2000};
+function waterRows(date){return Array.isArray(WC[date])?WC[date]:[]}
+function waterTotal(date){const rows=waterRows(date), ids=new Set(rows.map(x=>x.id));return rows.reduce((s,x)=>s+Number(x.ml||0),0)+WQ.filter(x=>x.date===date&&!ids.has(x.id)).reduce((s,x)=>s+x.ml,0)}
+function renderWater(){
+  const n=waterTotal(S.date), goal=waterGoal(), pending=WQ.filter(x=>x.date===S.date).length;
+  $('#water-total').textContent=n+' / '+goal+' ml';
+  $('#water-bar').style.width=Math.min(100,Math.max(0,n/goal*100))+'%';
+  if(document.activeElement!==$('#water-goal'))$('#water-goal').value=goal;
+  $('#water-status').textContent=pending?(waterProblem?'有 '+pending+' 筆待同步。'+waterProblem:'有 '+pending+' 筆待同步'):(waterProblem||'');
+  $('#water-retry').hidden=!WQ.length;
+}
+function saveWaterQueue(){localStorage.waterQueue=JSON.stringify(WQ)}
+function saveWaterCache(){localStorage.waterCache=JSON.stringify(WC)}
+function changeWater(ml){
+  if(!Number.isInteger(ml)||ml===0||Math.abs(ml)>10000)return alert('請輸入 1 到 10000 ml 的整數');
+  if(waterTotal(S.date)+ml<0)return alert('扣除量不能超過目前紀錄的飲水量');
+  const id=crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)+'-'+Math.random().toString(36).slice(2);
+  WQ.push({id,date:S.date,ml});
+  try{saveWaterQueue()}catch(e){WQ.pop();return alert('無法保存飲水紀錄，請確認瀏覽器儲存空間與設定')}
+  waterProblem='';renderWater();syncWater();
+}
+async function syncWater(){
+  if(waterSyncing||!S.pw)return;
+  waterSyncing=true;waterProblem='';renderWater();
+  try{
+    while(WQ.length){
+      const item=WQ[0];
+      try{await api('waterAdd',item)}catch(e){
+        if(e.message==='auth'){waterProblem='請重新登入';gate();break}
+        if(e.message==='WATER_TOO_LOW'){WQ.shift();saveWaterQueue();waterProblem='扣除失敗：試算表中的飲水量不足，請重新載入後確認。';alert(waterProblem);continue}
+        waterProblem='無法確認同步結果，請確認連線及 Apps Script 部署後重試。';break;
+      }
+      const rows=waterRows(item.date);
+      if(!rows.some(x=>x.id===item.id))WC[item.date]=rows.concat([{id:item.id,ml:item.ml}]);
+      waterRevision++;saveWaterCache();WQ.shift();saveWaterQueue();renderWater();
+    }
+  }finally{waterSyncing=false;renderWater()}
+}
+$('#water-250').onclick=()=>changeWater(250);
+$('#water-500').onclick=()=>changeWater(500);
+$('#water-add').onclick=()=>changeWater(Number($('#water-amount').value));
+$('#water-sub').onclick=()=>changeWater(-Number($('#water-amount').value));
+$('#water-save-goal').onclick=()=>{const n=Number($('#water-goal').value);if(!Number.isInteger(n)||n<1||n>10000)return alert('目標請輸入 1 到 10000 ml 的整數');localStorage.waterGoal=String(n);renderWater()};
+$('#water-retry').onclick=syncWater;
+​
+​
 async function api(act,d){const r=await fetch(API,{method:'POST',body:JSON.stringify({...d,act,pw:S.pw})});const j=await r.json();if(j.error)throw new Error(j.error);return j}
 async function flush(){while(Q.length){try{await api(Q[0].act,Q[0].d)}catch(e){return}Q.shift();localStorage.q=JSON.stringify(Q)}}
 async function send(act,d){try{await api(act,d)}catch(e){if(e.message==='auth')return gate();if(act==='add'||act==='body'||act==='food'){Q.push({act,d});localStorage.q=JSON.stringify(Q)}else alert('離線時只能新增，其他操作請連線後再試')}}
 function gate(){$('#gate').hidden=false;$('#app').hidden=true}
-$('#pwb').onclick=()=>{S.pw=$('#pw').value;localStorage.pw=S.pw;$('#gate').hidden=true;$('#app').hidden=false;load()};
-
+$('#pwb').onclick=()=>{S.pw=$('#pw').value;localStorage.pw=S.pw;$('#gate').hidden=true;$('#app').hidden=false;load();syncWater()};
+​
 async function load(){
   await flush();
-  try{const j=await api('load',{date:S.date});S.foods=j.foods;S.log=j.log;S.body=j.body.sort((a,b)=>a.d<b.d?-1:1);localStorage.c=JSON.stringify({foods:j.foods,body:S.body})}
+  const waterDate=S.date, waterVersion=waterRevision;
+  try{const j=await api('load',{date:waterDate});S.foods=j.foods;S.log=j.log;S.body=j.body.sort((a,b)=>a.d<b.d?-1:1);localStorage.c=JSON.stringify({foods:j.foods,body:S.body});if(Array.isArray(j.water)&&waterVersion===waterRevision){WC[waterDate]=j.water;saveWaterCache()}else if(!Array.isArray(j.water)){waterProblem='無法讀取飲水紀錄，請確認 Apps Script 已更新及工作表欄位正確。'}}
   catch(e){if(e.message==='auth')return gate();const c=JSON.parse(localStorage.c||'{}');S.foods=c.foods||[];S.body=c.body||[]}
   render();snap()
 }
-
+​
 function calc(){
   const rec=S.body.filter(b=>b.d<=S.date&&b.w!==''&&b.b!=='').slice(-7);if(!rec.length)return null;
   const a=k=>rec.reduce((s,r)=>s+num(r[k]),0)/rec.length,w=a('w'),bf=a('b'),lean=w*(1-bf/100),bmr=370+21.6*lean,tdee=bmr*GOAL.act,tw=lean/(1-GOAL.bf/100);
@@ -88,9 +145,10 @@ function calc(){
 }
 function target(){const c=calc(),r=S.body.find(b=>b.d===S.date&&b.cap!=='');return{cap:r?r.cap:c&&c.cap,prot:r?r.pr:c&&c.prot,c}}
 async function snap(){const c=calc();if(!c||S.date!==ymd()||S.body.some(b=>b.d===S.date&&b.cap!==''))return;await send('body',{v:[S.date,null,null,r1(c.lean),Math.round(c.bmr),Math.round(c.tdee),c.cap,c.prot]});render()}
-
+​
 const cat=f=>f.g||(f.n.match(/^([^｜－]{1,8})[｜－]/)||[])[1]||'其他';
 function render(){
+  renderWater();
   const eat=S.log.reduce((s,x)=>s+num(x.k),0),pr=S.log.reduce((s,x)=>s+num(x.p),0),t=target();
   $('#dt').value=S.date;$('#eat').textContent='已吃 '+Math.round(eat)+(t.cap?' / '+t.cap:'')+' kcal';$('#prot').textContent='蛋白質 '+Math.round(pr)+(t.prot?' / '+t.prot:'')+' g';
   $('#rem').textContent=t.cap?Math.round(t.cap-eat):'—';$('#rem').style.color=t.cap&&eat>t.cap?'var(--bad)':'';
@@ -99,12 +157,20 @@ function render(){
   const cnt={};S.foods.forEach(f=>cnt[cat(f)]=(cnt[cat(f)]||0)+1);const cats=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);
   if(!cats.includes(S.cat))S.cat=cats[0]||'';
   $('#cats').innerHTML=cats.map(c=>`<button data-c="${c}" class="${c===S.cat?'on':''}">${c}</button>`).join('');
-  $('#foods').innerHTML=S.foods.map((f,i)=>[f,i]).filter(([f])=>cat(f)===S.cat).map(([f,i])=>`<button class="food" data-f="${i}"><span>${f.n.replace(S.cat+'｜','').replace(S.cat+'－','')}<small>${f.s||''}</small></span><em>${f.k===''?'待確認':f.k+' kcal'}</em></button>`).join('');
+  renderFoods();
   $('#log').innerHTML=S.log.map((x,i)=>`<div class="row"><div>${x.n}<small>${x.m} ・ ${x.q} 份 ・ ${Math.round(x.k)} kcal</small></div>${x.r?`<button data-l="${i}" data-d="-">−</button><button data-l="${i}" data-d="+">+</button><button data-l="${i}" data-d="x">✕</button>`:'<small>待同步</small>'}</div>`).join('')||'<small style="color:var(--mu)">今天還沒有紀錄</small>';
   const c=t.c;$('#info').innerHTML=c?`<dl><dt>近 7 天平均</dt><dd>${r1(c.w)} kg ・ ${r1(c.bf)}%</dd><dt>瘦體重</dt><dd>${r1(c.lean)} kg</dd><dt>基礎代謝 BMR</dt><dd>${Math.round(c.bmr)} kcal</dd><dt>TDEE</dt><dd>${Math.round(c.tdee)} kcal</dd><dt>今日熱量上限</dt><dd>${t.cap} kcal</dd><dt>蛋白質目標</dt><dd>${t.prot} g</dd><dt>${GOAL.bf}% 體脂時體重</dt><dd>${r1(c.tw)} kg</dd><dt>距離 ${GOAL.date}</dt><dd>${c.days} 天</dd></dl>${c.tight?'<p class="warn">依目前進度，'+GOAL.date+' 達標有難度，熱量上限已鎖在基礎代謝。</p>':''}<h3>體重</h3>${spark('w','#f2b441')}<h3>體脂 %</h3>${spark('b','#8a94a3')}`:'<small style="color:var(--mu)">輸入體重與體脂後，這裡會顯示目標明細</small>'
 }
+function renderFoods(){
+  const norm=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/\s+/g,'');
+  const query=norm($('#food-search').value);
+  $('#cats').style.display=query?'none':'';
+  const matches=S.foods.map((f,i)=>[f,i]).filter(([f])=>query?norm(f.n).includes(query):cat(f)===S.cat);
+  $('#foods').innerHTML=matches.map(([f,i])=>`<button class="food" data-f="${i}"><span>${query?f.n:f.n.replace(S.cat+'｜','').replace(S.cat+'－','')}<small>${f.s||''}</small></span><em>${f.k===''?'待確認':f.k+' kcal'}</em></button>`).join('')||(query?'<small style="color:var(--mu)">找不到符合的食物</small>':'');
+}
+$('#food-search').addEventListener('input',renderFoods);
 function spark(k,c){const v=S.body.filter(b=>b[k]!=='').slice(-30).map(b=>+b[k]);if(v.length<2)return'';const lo=Math.min(...v),hi=Math.max(...v);return`<svg viewBox="0 0 300 50"><polyline fill="none" stroke="${c}" stroke-width="2" points="${v.map((y,i)=>(i/(v.length-1)*300).toFixed(1)+','+(46-(y-lo)/((hi-lo)||1)*42).toFixed(1)).join(' ')}"/></svg>`}
-
+​
 function dlg(html){$('#dlg').innerHTML=html+'<button style="width:100%;margin-top:6px" onclick="$(\'#dlg\').close()">取消</button>';$('#dlg').showModal()}
 async function addLog(f,q){const v=[S.date,S.meal,f.n,q,Math.round(num(f.k)*q),r1(num(f.p)*q),r1(num(f.c)*q),r1(num(f.f)*q)];
   S.log.push({r:null,m:v[1],n:v[2],q,k:v[4],p:v[5],c:v[6],f:v[7]});render();await send('add',{rows:[v]});load()}
@@ -126,7 +192,7 @@ function openEst(name){
       const f={n,s:$('#es').value,k:+$('#ek').value,p:+$('#ep').value,c:+$('#ec').value,f:+$('#ef').value,g:$('#eg').value};
       S.foods.push(f);$('#dlg').close();send('food',{vals:[f.n,f.s,f.k,f.p,f.c,f.f,f.g]});addLog(f,1)}}
 }
-
+​
 function openImport(){
   const miss=S.foods.filter(f=>f.k==='').map(f=>f.n);let items=[];
   dlg(`<b>匯入食物資料</b><textarea id="ij" rows="6" placeholder='貼上 Gemini 回覆的 JSON'></textarea><button id="cp" style="width:100%;margin:4px 0">複製「待確認」清單（${miss.length} 筆）給 Gemini</button><button class="pri" id="pv" style="width:100%">預覽</button><div id="ip"></div>`);
@@ -150,9 +216,9 @@ document.addEventListener('click',async e=>{const t=e.target.closest('button');i
   if(t.id==='sv'){const w=+$('#w').value,b=+$('#bf').value;if(!w||!b)return alert('請輸入體重與體脂');await send('body',{v:[S.date,w,b,null,null,null,null,null]});$('#w').value=$('#bf').value='';await load()}
 });
 $('#dt').onchange=e=>{S.date=e.target.value||ymd();load()};
-addEventListener('online',load);
+addEventListener('online',()=>{load();syncWater()});
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
-if(S.pw)($('#app').hidden=false,load());else gate();
+if(S.pw)($('#app').hidden=false,load(),syncWater());else gate();
 </script>
 </body>
 </html>
