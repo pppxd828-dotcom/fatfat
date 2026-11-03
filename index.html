@@ -8,6 +8,7 @@
 <link rel="icon" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>肥肥</title>
+<script>addEventListener("error",function(e){document.body.insertAdjacentHTML("afterbegin","<pre style=\"color:#ef6b5b;padding:16px;white-space:pre-wrap;position:relative;z-index:99\">程式錯誤："+e.message+"</pre>")})</script>
 <style>
 :root{color-scheme:dark;--bg:#0f1318;--sf:#171c23;--ln:#27303b;--tx:#e8ecf1;--mu:#8a94a3;--ac:#f2b441;--bad:#ef6b5b}
 *{box-sizing:border-box;margin:0}
@@ -52,7 +53,7 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
   <small id="water-status" aria-live="polite"></small><button type="button" id="water-retry" hidden style="margin-top:6px">重試同步</button>
 </div>
 <div class="chips" id="meals"></div>
-<input type="search" id="food-search" placeholder="搜尋食物名稱（跨分類）" aria-label="搜尋食物名稱" autocomplete="off" style="width:100%;margin-bottom:10px">
+<input type="search" id="food-search" placeholder="搜尋食物名稱（可輸入多個關鍵字）" aria-label="搜尋食物名稱" autocomplete="off" style="width:100%;margin-bottom:10px">
 <div class="chips scroll" id="cats"></div>
 <div id="foods"></div>
 <button id="newf" style="width:100%;margin-top:6px">＋ 新食物 / 拍照估算</button>
@@ -121,14 +122,14 @@ $('#water-add').onclick=()=>changeWater(Number($('#water-amount').value));
 $('#water-sub').onclick=()=>changeWater(-Number($('#water-amount').value));
 $('#water-save-goal').onclick=()=>{const n=Number($('#water-goal').value);if(!Number.isInteger(n)||n<1||n>10000)return alert('目標請輸入 1 到 10000 ml 的整數');localStorage.waterGoal=String(n);renderWater()};
 $('#water-retry').onclick=syncWater;
-​
-​
+
+
 async function api(act,d){const r=await fetch(API,{method:'POST',body:JSON.stringify({...d,act,pw:S.pw})});const j=await r.json();if(j.error)throw new Error(j.error);return j}
 async function flush(){while(Q.length){try{await api(Q[0].act,Q[0].d)}catch(e){return}Q.shift();localStorage.q=JSON.stringify(Q)}}
 async function send(act,d){try{await api(act,d)}catch(e){if(e.message==='auth')return gate();if(act==='add'||act==='body'||act==='food'){Q.push({act,d});localStorage.q=JSON.stringify(Q)}else alert('離線時只能新增，其他操作請連線後再試')}}
 function gate(){$('#gate').hidden=false;$('#app').hidden=true}
 $('#pwb').onclick=()=>{S.pw=$('#pw').value;localStorage.pw=S.pw;$('#gate').hidden=true;$('#app').hidden=false;load();syncWater()};
-​
+
 async function load(){
   await flush();
   const waterDate=S.date, waterVersion=waterRevision;
@@ -136,7 +137,7 @@ async function load(){
   catch(e){if(e.message==='auth')return gate();const c=JSON.parse(localStorage.c||'{}');S.foods=c.foods||[];S.body=c.body||[]}
   render();snap()
 }
-​
+
 function calc(){
   const rec=S.body.filter(b=>b.d<=S.date&&b.w!==''&&b.b!=='').slice(-7);if(!rec.length)return null;
   const a=k=>rec.reduce((s,r)=>s+num(r[k]),0)/rec.length,w=a('w'),bf=a('b'),lean=w*(1-bf/100),bmr=370+21.6*lean,tdee=bmr*GOAL.act,tw=lean/(1-GOAL.bf/100);
@@ -145,7 +146,7 @@ function calc(){
 }
 function target(){const c=calc(),r=S.body.find(b=>b.d===S.date&&b.cap!=='');return{cap:r?r.cap:c&&c.cap,prot:r?r.pr:c&&c.prot,c}}
 async function snap(){const c=calc();if(!c||S.date!==ymd()||S.body.some(b=>b.d===S.date&&b.cap!==''))return;await send('body',{v:[S.date,null,null,r1(c.lean),Math.round(c.bmr),Math.round(c.tdee),c.cap,c.prot]});render()}
-​
+
 const cat=f=>f.g||(f.n.match(/^([^｜－]{1,8})[｜－]/)||[])[1]||'其他';
 function render(){
   renderWater();
@@ -163,14 +164,14 @@ function render(){
 }
 function renderFoods(){
   const norm=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/\s+/g,'');
-  const query=norm($('#food-search').value);
+  const toks=String($('#food-search').value).normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean),query=toks.length>0;
   $('#cats').style.display=query?'none':'';
-  const matches=S.foods.map((f,i)=>[f,i]).filter(([f])=>query?norm(f.n).includes(query):cat(f)===S.cat);
+  const matches=S.foods.map((f,i)=>[f,i]).filter(([f])=>query?toks.every(t=>norm(f.n+(f.g||'')).includes(t)):cat(f)===S.cat);
   $('#foods').innerHTML=matches.map(([f,i])=>`<button class="food" data-f="${i}"><span>${query?f.n:f.n.replace(S.cat+'｜','').replace(S.cat+'－','')}<small>${f.s||''}</small></span><em>${f.k===''?'待確認':f.k+' kcal'}</em></button>`).join('')||(query?'<small style="color:var(--mu)">找不到符合的食物</small>':'');
 }
 $('#food-search').addEventListener('input',renderFoods);
 function spark(k,c){const v=S.body.filter(b=>b[k]!=='').slice(-30).map(b=>+b[k]);if(v.length<2)return'';const lo=Math.min(...v),hi=Math.max(...v);return`<svg viewBox="0 0 300 50"><polyline fill="none" stroke="${c}" stroke-width="2" points="${v.map((y,i)=>(i/(v.length-1)*300).toFixed(1)+','+(46-(y-lo)/((hi-lo)||1)*42).toFixed(1)).join(' ')}"/></svg>`}
-​
+
 function dlg(html){$('#dlg').innerHTML=html+'<button style="width:100%;margin-top:6px" onclick="$(\'#dlg\').close()">取消</button>';$('#dlg').showModal()}
 async function addLog(f,q){const v=[S.date,S.meal,f.n,q,Math.round(num(f.k)*q),r1(num(f.p)*q),r1(num(f.c)*q),r1(num(f.f)*q)];
   S.log.push({r:null,m:v[1],n:v[2],q,k:v[4],p:v[5],c:v[6],f:v[7]});render();await send('add',{rows:[v]});load()}
@@ -192,7 +193,7 @@ function openEst(name){
       const f={n,s:$('#es').value,k:+$('#ek').value,p:+$('#ep').value,c:+$('#ec').value,f:+$('#ef').value,g:$('#eg').value};
       S.foods.push(f);$('#dlg').close();send('food',{vals:[f.n,f.s,f.k,f.p,f.c,f.f,f.g]});addLog(f,1)}}
 }
-​
+
 function openImport(){
   const miss=S.foods.filter(f=>f.k==='').map(f=>f.n);let items=[];
   dlg(`<b>匯入食物資料</b><textarea id="ij" rows="6" placeholder='貼上 Gemini 回覆的 JSON'></textarea><button id="cp" style="width:100%;margin:4px 0">複製「待確認」清單（${miss.length} 筆）給 Gemini</button><button class="pri" id="pv" style="width:100%">預覽</button><div id="ip"></div>`);
