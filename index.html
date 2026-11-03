@@ -47,6 +47,7 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 <div class="chips scroll" id="cats"></div>
 <div id="foods"></div>
 <button id="newf" style="width:100%;margin-top:6px">＋ 新食物 / 拍照估算</button>
+<button id="impf" style="width:100%;margin-top:6px">匯入 Gemini 估算結果</button>
 <h3>已記錄</h3><div id="log"></div>
 </section>
 <section id="v2" hidden>
@@ -58,7 +59,7 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 </div>
 <dialog id="dlg"></dialog>
 <script>
-const API='https://script.google.com/macros/s/AKfycbz2EAa0ohAnxE86AxbB_RBuLjHRDRRtGiH0Y8kAknLgPo1KwzqtY1whlcouhFX-iCGA/exec', GOAL={date:'2027-06-30',bf:25,act:1.2,pk:2.2};
+const API='貼上你的 Apps Script 網址', GOAL={date:'2027-06-30',bf:25,act:1.2,pk:2.2};
 const $=s=>document.querySelector(s), MEALS=['早餐','午餐','晚餐','點心','宵夜'];
 const ymd=d=>{d=d||new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
 const r1=x=>+(x||0).toFixed(1), num=x=>x===''||x==null?0:+x;
@@ -126,12 +127,26 @@ function openEst(name){
       S.foods.push(f);$('#dlg').close();send('food',{vals:[f.n,f.s,f.k,f.p,f.c,f.f,f.g]});addLog(f,1)}}
 }
 
+function openImport(){
+  const miss=S.foods.filter(f=>f.k==='').map(f=>f.n);let items=[];
+  dlg(`<b>匯入食物資料</b><textarea id="ij" rows="6" placeholder='貼上 Gemini 回覆的 JSON'></textarea><button id="cp" style="width:100%;margin:4px 0">複製「待確認」清單（${miss.length} 筆）給 Gemini</button><button class="pri" id="pv" style="width:100%">預覽</button><div id="ip"></div>`);
+  $('#dlg').onclick=async e=>{const i=e.target.id;
+    if(i==='cp'){navigator.clipboard.writeText(miss.join('\n'));e.target.textContent='已複製'}
+    if(i==='pv'){try{const t=$('#ij').value.replace(/```(json)?/g,'').trim(),a=JSON.parse(t.slice(t.indexOf('['),t.lastIndexOf(']')+1));
+      items=a.map(x=>{const est=x.src!=='官方',hit=S.foods.find(f=>f.n===x.name||f.n===x.name+'（估算）');let n=x.name,s=x.serving||'';
+        if(hit&&hit.k!=='')return null;
+        if(hit){n=hit.n;if(est)s+='（估算）'}else if(est&&!n.includes('估算'))n+='（估算）';
+        return[n,s,+x.kcal||0,+x.p||0,+x.c||0,+x.f||0,x.cat||'其他']}).filter(Boolean);
+      $('#ip').innerHTML=items.map(v=>`<div class="row"><div>${v[0]}<small>${v[1]} ・ ${v[2]} kcal ・ ${v[6]}</small></div></div>`).join('')+(items.length?`<button class="pri" id="im2" style="width:100%">匯入 ${items.length} 筆</button>`:'<small>這些食物資料庫都已有熱量，沒有要匯入的</small>')}
+      catch(x){$('#ip').innerHTML='<p class="warn">格式讀不出來，請確認貼的是 Gemini 回覆的 JSON</p>'}}
+    if(i==='im2'){e.target.disabled=true;try{const r=await api('foods',{items});$('#dlg').close();alert('新增 '+r.added+'、補齊 '+r.filled+'、略過 '+r.skipped+' 筆');load()}catch(x){alert(x.message);e.target.disabled=false}}}
+}
 document.addEventListener('click',async e=>{const t=e.target.closest('button');if(!t)return;const d=t.dataset;
   if(d.m){S.meal=d.m;render()}if(d.c){S.cat=d.c;render()}if(d.f)openFood(S.foods[d.f]);
   if(d.v){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b===t));$('#v1').hidden=d.v!=='v1';$('#v2').hidden=d.v!=='v2'}
   if(d.l){const x=S.log[d.l],u=x.q||1,q=d.d==='+'?x.q+.5:x.q-.5;
     if(d.d==='x'||q<=0){await send('del',{row:x.r})}else await send('set',{row:x.r,vals:[S.date,x.m,x.n,q,Math.round(x.k/u*q),r1(num(x.p)/u*q),r1(num(x.c)/u*q),r1(num(x.f)/u*q)]});load()}
-  if(t.id==='newf')openEst('');
+  if(t.id==='newf')openEst('');if(t.id==='impf')openImport();
   if(t.id==='sv'){const w=+$('#w').value,b=+$('#bf').value;if(!w||!b)return alert('請輸入體重與體脂');await send('body',{v:[S.date,w,b,null,null,null,null,null]});$('#w').value=$('#bf').value='';await load()}
 });
 $('#dt').onchange=e=>{S.date=e.target.value||ymd();load()};
