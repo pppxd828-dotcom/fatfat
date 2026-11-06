@@ -138,7 +138,7 @@ async function load(){
   const waterDate=S.date, waterVersion=waterRevision;
   try{const j=await api('load',{date:waterDate});S.foods=j.foods;S.log=j.log;S.body=j.body.sort((a,b)=>a.d<b.d?-1:1);localStorage.c=JSON.stringify({foods:j.foods,body:S.body});if(Array.isArray(j.water)&&waterVersion===waterRevision){WC[waterDate]=j.water;saveWaterCache()}else if(!Array.isArray(j.water)){waterProblem='無法讀取飲水紀錄，請確認 Apps Script 已更新及工作表欄位正確。'}}
   catch(e){if(e.message==='auth')return gate();const c=JSON.parse(localStorage.c||'{}');S.foods=c.foods||[];S.body=c.body||[]}
-  render();snap()
+  render();snap();checkNew()
 }
 
 function calc(){
@@ -215,9 +215,31 @@ function openEst(name){
       catch(x){$('#rs').innerHTML='<p class="warn">'+x.message+'</p>'}e.target.disabled=false;e.target.textContent='重新估算'}
     if(e.target.id==='cf'){let n=$('#en').value;if(!n.includes('估算'))n+='（估算）';
       const f={n,s:$('#es').value,k:+$('#ek').value,p:+$('#ep').value,c:+$('#ec').value,f:+$('#ef').value,g:$('#eg').value};
-      S.foods.push(f);$('#dlg').close();send('food',{vals:[f.n,f.s,f.k,f.p,f.c,f.f,f.g]});addLog(f,1)}}
+      S.foods.push(f);markSeen([f.n]);$('#dlg').close();send('food',{vals:[f.n,f.s,f.k,f.p,f.c,f.f,f.g]});addLog(f,1)}}
 }
 
+// 記住「已看過」的食物名稱；之後出現沒看過的，就問你這餐有沒有吃
+function markSeen(names){if(!localStorage.seen)return;const s=new Set(JSON.parse(localStorage.seen));names.forEach(n=>s.add(n));localStorage.seen=JSON.stringify([...s])}
+function checkNew(){
+  const names=S.foods.map(f=>f.n);if(!names.length)return;
+  if(!localStorage.seen){localStorage.seen=JSON.stringify(names);return}
+  if($('#dlg').open)return;
+  const seen=new Set(JSON.parse(localStorage.seen)),fresh=S.foods.filter(f=>!seen.has(f.n)&&f.k!=='');
+  localStorage.seen=JSON.stringify(names);
+  if(fresh.length)askLog(fresh.map(f=>[f.n,f.s,f.k,f.p,f.c,f.f,f.g]),'偵測到 '+fresh.length+' 筆新增食物')
+}
+function askLog(items,msg){
+  if(!items.length)return;
+  dlg(`<b>${msg}</b><div style="color:var(--mu);font-size:14px;margin:4px 0 8px">勾選這餐吃了哪些，加入 ${S.date} 的記錄；沒吃的不用勾，按取消即可</div><select id="lm">${MEALS.map(m=>`<option ${m===S.meal?'selected':''}>${m}</option>`).join('')}</select><div style="max-height:45vh;overflow-y:auto;margin:8px 0">${items.map((v,i)=>`<label class="row"><input type="checkbox" data-i="${i}" style="width:auto"><div>${v[0]}<small>${v[2]} kcal ・ ${v[6]||''}</small></div><input type="number" data-q="${i}" value="1" step=".5" min=".5" inputmode="decimal" style="width:64px"></label>`).join('')}</div><button id="la" style="width:100%;margin-bottom:6px">全選</button><button class="pri" id="lg" style="width:100%">加入記錄</button>`);
+  $('#dlg').onclick=async e=>{
+    if(e.target.id==='la')document.querySelectorAll('#dlg [data-i]').forEach(c=>c.checked=true);
+    if(e.target.id==='lg'){
+      const meal=$('#lm').value,rows=[];
+      document.querySelectorAll('#dlg [data-i]').forEach(c=>{if(!c.checked)return;const v=items[c.dataset.i],q=Math.max(.5,+document.querySelector('#dlg [data-q="'+c.dataset.i+'"]').value||1);
+        rows.push([S.date,meal,v[0],q,Math.round(num(v[2])*q),r1(num(v[3])*q),r1(num(v[4])*q),r1(num(v[5])*q)])});
+      if(!rows.length)return alert('請至少勾選一項');
+      $('#dlg').close();rows.forEach(v=>S.log.push({r:null,m:v[1],n:v[2],q:v[3],k:v[4],p:v[5],c:v[6],f:v[7]}));render();await send('add',{rows});load()}}
+}
 function openImport(){
   const miss=S.foods.filter(f=>f.k==='').map(f=>f.n);let items=[];
   dlg(`<b>匯入食物資料</b><textarea id="ij" rows="6" placeholder='貼上 Gemini 回覆的 JSON'></textarea><button id="cp" style="width:100%;margin:4px 0">複製「待確認」清單（${miss.length} 筆）給 Gemini</button><button class="pri" id="pv" style="width:100%">預覽</button><div id="ip"></div>`);
@@ -230,7 +252,7 @@ function openImport(){
         return[n,s,+x.kcal||0,+x.p||0,+x.c||0,+x.f||0,x.cat||'其他']}).filter(Boolean);
       $('#ip').innerHTML=items.map(v=>`<div class="row"><div>${v[0]}<small>${v[1]} ・ ${v[2]} kcal ・ ${v[6]}</small></div></div>`).join('')+(items.length?`<button class="pri" id="im2" style="width:100%">匯入 ${items.length} 筆</button>`:'<small>這些食物資料庫都已有熱量，沒有要匯入的</small>')}
       catch(x){$('#ip').innerHTML='<p class="warn">格式讀不出來，請確認貼的是 Gemini 回覆的 JSON</p>'}}
-    if(i==='im2'){e.target.disabled=true;try{const r=await api('foods',{items});$('#dlg').close();alert('新增 '+r.added+'、補齊 '+r.filled+'、略過 '+r.skipped+' 筆');load()}catch(x){alert(x.message);e.target.disabled=false}}}
+    if(i==='im2'){e.target.disabled=true;try{const r=await api('foods',{items});markSeen(items.map(v=>v[0]));$('#dlg').close();await load();askLog(items,'匯入完成：新增 '+r.added+'、補齊 '+r.filled+'、略過 '+r.skipped+' 筆')}catch(x){alert(x.message);e.target.disabled=false}}}
 }
 document.addEventListener('click',async e=>{const t=e.target.closest('button');if(!t)return;const d=t.dataset;
   if(d.m){S.meal=d.m;render()}if(d.c){S.cat=d.c;S.more=false;render()}if(d.f)openFood(S.foods[d.f]);
