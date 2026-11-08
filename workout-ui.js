@@ -75,7 +75,7 @@ function renderW() {
     x.cardio
       .map(
         (c) =>
-          `<div class="row">${esc(c.type === '其他' ? c.name : c.type)}：${esc(c.minutes)} 分鐘</div>`,
+          `<div class="row">${esc(c.type === '其他' ? c.name : c.type)}：${esc(c.minutes)} 分鐘${c.type === '走路散步' && Number.isInteger(c.steps) ? '・' + esc(c.steps) + ' 步' : ''}</div>`,
       )
       .join('') +
     `<button data-wa="cardio">新增有氧</button><button class="pri" data-wa="finish" style="width:100%;margin-top:12px">結束訓練</button><p><small>結束後才計入飲食；熱量為粗估，可能與 TDEE 活動係數重疊。</small></p>`;
@@ -83,12 +83,16 @@ function renderW() {
 }
 function cardioDialog() {
   dlg(
-    `<h3>新增有氧（每段分開記錄）</h3><label>項目<select id="ct"><option>坡度快走</option><option>走路散步</option><option>橢圓機</option><option>健身車</option><option>階梯機</option><option>其他</option></select></label><label>時間（分鐘）<input id="cm" type="number" min="0.01" max="1440" step="0.1"></label><label id="walkspeed">坡度快走速度（km/h）<input id="cs" type="number" step="0.1"></label><label id="walkgrade">坡度快走坡度（%）<input id="cg" type="number" step="0.1"></label><label id="powerfield">功率（瓦，選填）<input id="cw" type="number"></label><label id="intensityfield"><span id="ci-title">自覺強度</span><select id="ci"><option value="">請選擇</option><option value="輕">輕</option><option value="中">中</option><option value="高">高</option></select></label><label id="otherfield">其他項目名稱<input id="cn"></label><button class="pri" id="csave">儲存有氧</button>`,
+    `<h3>新增有氧（每段分開記錄）</h3><label>項目<select id="ct"><option>坡度快走</option><option>走路散步</option><option>橢圓機</option><option>健身車</option><option>階梯機</option><option>其他</option></select></label><label>時間（分鐘）<input id="cm" type="number" min="0.01" max="1440" step="0.1"></label><label id="walksteps">步數<input id="csteps" type="number" inputmode="numeric" min="1" max="1000000" step="1" placeholder="這次散步的步數"></label><p id="cadence-note" style="font-size:0.85em;color:var(--muted)">輸入時間和步數後，會提供粗略步調建議。</p><label id="walkspeed">坡度快走速度（km/h）<input id="cs" type="number" step="0.1"></label><label id="walkgrade">坡度快走坡度（%）<input id="cg" type="number" step="0.1"></label><label id="powerfield">功率（瓦，選填）<input id="cw" type="number"></label><label id="intensityfield"><span id="ci-title">自覺強度</span><select id="ci"><option value="">請選擇</option><option value="輕">輕</option><option value="中">中</option><option value="高">高</option></select></label><label id="otherfield">其他項目名稱<input id="cn"></label><button class="pri" id="csave">儲存有氧</button>`,
   );
   let lastCardioType = '';
+  let manualWalkPace = false;
   function refreshCardioFields() {
     const t = $('#ct').value;
-    if (lastCardioType && lastCardioType !== t) $('#ci').value = '';
+    if (lastCardioType && lastCardioType !== t) {
+      $('#ci').value = '';
+      manualWalkPace = false;
+    }
     lastCardioType = t;
     $('#ci-title').textContent = t === '走路散步' ? '步速' : '自覺強度';
     const labels =
@@ -101,13 +105,49 @@ function cardioDialog() {
           ]
         : ['請選擇', '輕', '中', '高'];
     Array.from($('#ci').options).forEach((o, i) => (o.textContent = labels[i]));
+    $('#walksteps').hidden = t !== '走路散步';
+    $('#cadence-note').hidden = t !== '走路散步';
     $('#walkspeed').hidden = t !== '坡度快走';
     $('#walkgrade').hidden = t !== '坡度快走';
     $('#powerfield').hidden = !['健身車', '橢圓機', '階梯機'].includes(t);
     $('#intensityfield').hidden = t === '坡度快走';
     $('#otherfield').hidden = t !== '其他';
   }
-  $('#ct').onchange = refreshCardioFields;
+  function recommendWalkPace() {
+    if ($('#ct').value !== '走路散步') return;
+    const minutes = Number($('#cm').value),
+      steps = Number($('#csteps').value);
+    const note = $('#cadence-note');
+    if (!(
+      minutes > 0 &&
+      minutes <= 1440 &&
+      Number.isInteger(steps) &&
+      steps >= 1 &&
+      steps <= 1000000
+    )) {
+      note.textContent = '輸入時間和步數後，會提供粗略步調建議。';
+      if (!manualWalkPace) $('#ci').value = '';
+      return;
+    }
+    const cadence = steps / minutes;
+    // 步頻僅為初步參考，不能直接換算速度；120 為介面上的粗略分界。
+    const suggestion = cadence < 100 ? '輕' : cadence < 120 ? '中' : '高';
+    const label = { 輕: '慢走', 中: '一般', 高: '快走' }[suggestion];
+    if (!manualWalkPace) $('#ci').value = suggestion;
+    note.textContent = `平均約 ${Math.round(cadence)} 步／分鐘；粗略建議：${label}。步幅和地形會影響結果，請自行調整。${manualWalkPace ? '（保留你選的步速）' : ''}`;
+  }
+  $('#ct').onchange = () => {
+    refreshCardioFields();
+    recommendWalkPace();
+  };
+  $('#cm').oninput = recommendWalkPace;
+  $('#csteps').oninput = recommendWalkPace;
+  $('#ci').onchange = () => {
+    if ($('#ct').value === '走路散步') {
+      manualWalkPace = $('#ci').value !== '';
+      recommendWalkPace();
+    }
+  };
   refreshCardioFields();
   $('#csave').onclick = async () => {
     const t = $('#ct').value;
@@ -123,6 +163,11 @@ function cardioDialog() {
     }
     if (!Number.isFinite(c.minutes) || c.minutes <= 0 || c.minutes > 1440)
       return alert('請輸入有效時間');
+    if (t === '走路散步') {
+      c.steps = Number($('#csteps').value);
+      if (!Number.isInteger(c.steps) || c.steps < 1 || c.steps > 1000000)
+        return alert('請輸入這次散步的步數（1–1,000,000 的整數）');
+    }
     if (
       t === '坡度快走' &&
       (!Number.isFinite(c.speed) ||
