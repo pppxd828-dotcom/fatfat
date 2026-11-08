@@ -68,7 +68,12 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 <button class="pri" id="sv" style="width:100%;margin:8px 0">儲存</button>
 <div id="info"></div>
 </section>
-<nav><button data-v="v1" class="on">飲食</button><button data-v="v2">身體</button></nav>
+<section id="v3" hidden>
+<div class="chips scroll" id="wnames"></div>
+<div id="wrest" style="color:var(--ac);font-weight:600;margin-bottom:6px"></div>
+<div id="wbody"></div>
+</section>
+<nav><button data-v="v1" class="on">飲食</button><button data-v="v3">運動</button><button data-v="v2">身體</button></nav>
 </div>
 <dialog id="dlg"></dialog>
 <script>
@@ -254,12 +259,50 @@ function openImport(){
       catch(x){$('#ip').innerHTML='<p class="warn">格式讀不出來，請確認貼的是 Gemini 回覆的 JSON</p>'}}
     if(i==='im2'){e.target.disabled=true;try{const r=await api('foods',{items});markSeen(items.map(v=>v[0]));$('#dlg').close();await load();askLog(items,'匯入完成：新增 '+r.added+'、補齊 '+r.filled+'、略過 '+r.skipped+' 筆')}catch(x){alert(x.message);e.target.disabled=false}}}
 }
+// ---- 運動（輕量版）：讀「健身計畫」的 C_ 課表，寫回同一張課表 ----
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let W={names:[],name:localStorage.wName||'',c:null,rest:0};
+async function loadW(){
+  try{
+    if(!W.names.length)W.names=(await api('wCourses',{})).names;
+    if(!W.names.includes(W.name))W.name=W.names[0]||'';
+    W.c=W.name?await api('wLoad',{name:W.name}):null;
+  }catch(e){if(e.message==='auth')return gate();$('#wbody').innerHTML='<p class="warn">'+esc(e.message)+'</p>';return}
+  renderW()
+}
+function renderW(){
+  const c=W.c,started=c&&c.date===ymd();
+  $('#wnames').innerHTML=W.names.map(n=>`<button data-wa="pick" data-n="${esc(n)}" class="${n===W.name?'on':''}">${esc(n.slice(2))}</button>`).join('');
+  if(!c){$('#wbody').innerHTML='';return}
+  if(!started){
+    $('#wbody').innerHTML=`<button class="pri" data-wa="start" style="width:100%;margin-bottom:10px">開始訓練</button><small style="color:var(--mu)">開始時會先把課表上次的成績存進成長紀錄，再清空課表</small><h3>本課表</h3>`+c.acts.map(a=>`<div class="row"><div>${esc(a.name)}<small>上次：${esc(a.sets[0].last||'—')}</small></div><small>${a.sets.length} 組</small></div>`).join('');
+    return
+  }
+  $('#wbody').innerHTML=c.acts.map(a=>`<div class="row" style="display:block;margin-bottom:10px"><b>${esc(a.name)}</b><small>${esc(a.muscle)}　上次：${esc(a.sets[0].last||'—')}</small>`+a.sets.map(s=>{
+    if(s.done)return `<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><span style="flex:1">第 ${s.n} 組　✓ ${esc(s.w)} kg × ${esc(s.r)}</span><button data-wa="undo" data-row="${s.row}">↩</button></div>`;
+    const m=String(s.last).match(/([\d.]+)\s*kg\s*[×x]\s*(\d+)/),dw=s.w!==''?s.w:m?m[1]:'',dr=s.r!==''?s.r:m?m[2]:'';
+    return `<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><span style="width:46px">第${s.n}組</span><input id="w${s.row}" type="number" step=".5" inputmode="decimal" value="${esc(dw)}" placeholder="kg" style="flex:1;min-width:0"><input id="r${s.row}" type="number" inputmode="numeric" value="${esc(dr)}" placeholder="次" style="width:64px"><button class="pri" data-wa="set" data-row="${s.row}">完成</button></div>`}).join('')+'</div>').join('')+`<button class="pri" data-wa="finish" style="width:100%">結束訓練（存入成長紀錄）</button>`
+}
+async function wAct(t){
+  const a=t.dataset.wa,today=ymd();
+  try{
+    if(a==='pick'){W.name=t.dataset.n;localStorage.wName=W.name;return loadW()}
+    t.disabled=true;
+    if(a==='start')W.c=await api('wStart',{name:W.name,date:today});
+    if(a==='set'){const row=+t.dataset.row,w=$('#w'+row).value,r=$('#r'+row).value;if(w===''||r===''){t.disabled=false;return alert('請輸入重量與次數')}
+      await api('wSet',{name:W.name,row,w:+w,r:+r,p:''});W.rest=Date.now()+90000;W.c=await api('wLoad',{name:W.name})}
+    if(a==='undo'){await api('wUndo',{name:W.name,row:+t.dataset.row});W.c=await api('wLoad',{name:W.name})}
+    if(a==='finish'){const r=await api('wFinish',{name:W.name,date:today});alert('已存入成長紀錄：新增 '+r.written+'、更新 '+r.updated+' 筆')}
+  }catch(e){if(e.message==='auth')return gate();alert(e.message)}
+  renderW()
+}
+setInterval(()=>{const s=Math.ceil((W.rest-Date.now())/1000);$('#wrest').textContent=s>0?'休息 '+s+' 秒':''},500);
 document.addEventListener('click',async e=>{const t=e.target.closest('button');if(!t)return;const d=t.dataset;
   if(d.m){S.meal=d.m;render()}if(d.c){S.cat=d.c;S.more=false;render()}if(d.f)openFood(S.foods[d.f]);
-  if(d.v){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b===t));$('#v1').hidden=d.v!=='v1';$('#v2').hidden=d.v!=='v2'}
+  if(d.v){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b===t));$('#v1').hidden=d.v!=='v1';$('#v2').hidden=d.v!=='v2';$('#v3').hidden=d.v!=='v3';if(d.v==='v3')loadW()}
   if(d.l){const x=S.log[d.l],u=x.q||1,q=d.d==='+'?x.q+.5:x.q-.5;
     if(d.d==='x'||q<=0){await send('del',{row:x.r})}else await send('set',{row:x.r,vals:[S.date,x.m,x.n,q,Math.round(x.k/u*q),r1(num(x.p)/u*q),r1(num(x.c)/u*q),r1(num(x.f)/u*q)]});load()}
-  if(t.id==='more'){S.more=!S.more;renderFoods()}if(t.id==='newf')openEst('');if(t.id==='impf')openImport();
+  if(t.id==='more'){S.more=!S.more;renderFoods()}if(d.wa)wAct(t);if(t.id==='newf')openEst('');if(t.id==='impf')openImport();
   if(t.id==='sv'){const w=+$('#w').value,b=+$('#bf').value;if(!w||!b)return alert('請輸入體重與體脂');await send('body',{v:[S.date,w,b,null,null,null,null,null]});$('#w').value=$('#bf').value='';await load()}
 });
 $('#dt').onchange=e=>{S.date=e.target.value||ymd();load()};
