@@ -78,7 +78,7 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 </div>
 <dialog id="dlg"></dialog>
 <script>
-const API='https://example.invalid/REPLACE_WITH_TEST_DEPLOYMENT_URL', GOAL={date:'2027-06-30',bf:25,act:1.2,pk:2.2};
+const API='https://script.google.com/macros/s/AKfycbzTCcASleumAyRAB1jI-350YLOGZhAm8UgqtBXdnjT2JcemvbRNrgBeKkBETajxUuAopw/exec', GOAL={date:'2027-06-30',bf:25,act:1.2,pk:2.2};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const $=s=>document.querySelector(s), MEALS=['早餐','午餐','晚餐','點心','宵夜'];
 const ymd=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'}).format(d||new Date());
