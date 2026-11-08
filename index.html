@@ -18,7 +18,7 @@ button{cursor:pointer}button.on,button.pri{background:var(--ac);border-color:var
 header{padding:calc(12px + env(safe-area-inset-top)) 16px 12px;border-bottom:1px solid var(--ln)}
 .big{font-size:52px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:8px}.big small{font-size:15px;color:var(--mu);font-weight:400;margin-left:8px}
 .bar{height:6px;background:var(--ln);border-radius:3px;margin:8px 0}.bar i{display:block;height:100%;background:var(--ac);border-radius:3px;width:0}
-.sub{display:flex;justify-content:space-between;color:var(--mu);font-size:14px}
+.sub{display:flex;justify-content:space-between;color:var(--mu);font-size:14px}.calorie-values{flex-wrap:wrap;gap:4px 10px}.calorie-values #burn-label{color:#70d0d0}#burn-bar{position:absolute;top:0;height:100%;background:#56b9c5;border-radius:0 3px 3px 0}
 section{padding:12px 16px}
 .chips{display:flex;gap:8px;margin-bottom:10px}.chips.scroll{overflow-x:auto;padding-bottom:4px}.chips button{white-space:nowrap;padding:8px 14px}
 .food,.row{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;margin-bottom:6px}
@@ -42,9 +42,9 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 <header>
 <input type="date" id="dt">
 <div class="big"><span id="rem">—</span><small>kcal 剩餘</small></div>
-<div class="bar m"><i id="bar"></i><div id="marks"></div></div>
+<div class="bar m" id="calorie-track" role="img" aria-label="熱量進度"><i id="bar"></i><i id="burn-bar" aria-hidden="true"></i><div id="marks"></div></div>
 <div id="hint" style="font-size:14px;margin-bottom:4px"></div>
-<div class="sub"><span id="eat"></span><span id="prot"></span></div><div id="energy" style="font-size:14px"></div>
+<div class="sub calorie-values"><span id="eat"></span><span id="burn-label"></span><span id="prot"></span></div><div id="energy" style="font-size:14px"></div>
 <div id="rec"></div>
 </header>
 <section id="v1">
@@ -78,7 +78,7 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 </div>
 <dialog id="dlg"></dialog>
 <script>
-const API='https://script.google.com/macros/s/AKfycbzTCcASleumAyRAB1jI-350YLOGZhAm8UgqtBXdnjT2JcemvbRNrgBeKkBETajxUuAopw/exec', GOAL={date:'2027-06-30',bf:25,act:1.2,pk:2.2};
+const API='https://example.invalid/REPLACE_WITH_TEST_DEPLOYMENT_URL', GOAL={date:'2027-06-30',bf:25,act:1.2,pk:2.2};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const $=s=>document.querySelector(s), MEALS=['早餐','午餐','晚餐','點心','宵夜'];
 const ymd=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'}).format(d||new Date());
@@ -166,10 +166,12 @@ function render(){
   const eat=S.log.reduce((s,x)=>s+num(x.k),0),pr=S.log.reduce((s,x)=>s+num(x.p),0),t=target();
   $('#dt').value=S.date;$('#eat').textContent='已吃 '+Math.round(eat)+(t.cap?' / '+t.cap:'')+' kcal';$('#prot').textContent='蛋白質 '+Math.round(pr)+(t.prot?' / '+t.prot:'')+' g';
   const net=eat-exerciseDay.knownKcal, incomplete=!foodAvailable||exerciseDay.pending;
-  $('#eat').textContent=foodAvailable?'食物 '+Math.round(eat)+' kcal':'食物資料未載入';
-  $('#energy').textContent='運動 '+(exerciseDay.pending?'待計算（已知 '+Math.round(exerciseDay.knownKcal)+'）':Math.round(exerciseDay.knownKcal))+' kcal・淨攝取 '+(foodAvailable?Math.round(net):'待計算')+(incomplete?'（尚不完整）':'')+' kcal';
+  $('#eat').textContent=foodAvailable?'攝取 '+Math.round(eat)+' kcal':'食物資料未載入';
+  $('#burn-label').textContent=exerciseDay.pending?'運動待計算（已知 −'+Math.round(exerciseDay.knownKcal)+'）':'運動 −'+Math.round(exerciseDay.knownKcal)+' kcal';
+  $('#energy').textContent=incomplete?'熱量尚不完整':net<0?'淨攝取 '+Math.round(net)+' kcal（運動超過攝取）':'';
+  $('#calorie-track').setAttribute('aria-label',foodAvailable?'食物攝取 '+Math.round(eat)+' 大卡，運動已知扣除 '+Math.round(exerciseDay.knownKcal)+' 大卡，淨攝取 '+Math.round(net)+' 大卡'+(incomplete?'，資料尚不完整':''):'食物資料尚未載入');
   $('#rem').textContent=t.cap&&foodAvailable?Math.round(t.cap-net):'—';$('#rem').style.color=t.cap&&net>t.cap?'var(--bad)':'';
-  if(foodAvailable)renderBar(net,t);else {$('#bar').style.width='0';$('#marks').innerHTML='';$('#hint').textContent='資料尚未完整載入';$('#rec').innerHTML='';}
+  if(foodAvailable)renderBar(eat,t,exerciseDay.knownKcal);else {$('#bar').style.width='0';$('#burn-bar').style.width='0';$('#marks').innerHTML='';$('#hint').textContent='資料尚未完整載入';$('#rec').innerHTML='';}
   $('#meals').innerHTML=MEALS.map(m=>`<button data-m="${m}" class="${m===S.meal?'on':''}">${m}</button>`).join('');
   const cnt={};S.foods.forEach(f=>cnt[cat(f)]=(cnt[cat(f)]||0)+1);const cats=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);
   if(!cats.includes(S.cat))S.cat=cats[0]||'';
@@ -178,14 +180,14 @@ function render(){
   $('#log').innerHTML=S.log.map((x,i)=>`<div class="row"><div>${esc(x.n)}<small>${esc(x.m)} ・ ${esc(x.q)} 份 ・ ${Math.round(x.k)} kcal</small></div>${x.r?`<button data-l="${i}" data-d="-">−</button><button data-l="${i}" data-d="+">+</button><button data-l="${i}" data-d="x">✕</button>`:'<small>待同步</small>'}</div>`).join('')||(foodAvailable?'<small style="color:var(--mu)">今天還沒有紀錄</small>':'<small style="color:var(--mu)">紀錄尚未載入，請連線確認</small>');
   const c=t.c;$('#info').innerHTML=c?`<dl><dt>近 7 天平均</dt><dd>${r1(c.w)} kg ・ ${r1(c.bf)}%</dd><dt>瘦體重</dt><dd>${r1(c.lean)} kg</dd><dt>基礎代謝 BMR</dt><dd>${Math.round(c.bmr)} kcal</dd><dt>TDEE</dt><dd>${Math.round(c.tdee)} kcal</dd><dt>今日熱量上限</dt><dd>${esc(t.cap)} kcal</dd><dt>蛋白質目標</dt><dd>${esc(t.prot)} g</dd><dt>${GOAL.bf}% 體脂時體重</dt><dd>${r1(c.tw)} kg</dd><dt>距離 ${GOAL.date}</dt><dd>${c.days} 天</dd></dl>${c.tight?'<p class="warn">依目前進度，'+GOAL.date+' 達標有難度，熱量上限已鎖在基礎代謝。</p>':''}<h3>體重</h3>${spark('w','#f2b441')}<h3>體脂 %</h3>${spark('b','#8a94a3')}`:'<small style="color:var(--mu)">輸入體重與體脂後，這裡會顯示目標明細</small>'
 }
-function renderBar(eat,t){
-  const cap=t.cap,td=t.tdee;
-  if(!cap){$('#bar').style.width='0';$('#marks').innerHTML='';$('#hint').textContent='';$('#rec').innerHTML='';return}
-  const mx=Math.max(td||0,cap,eat)*1.05,pc=v=>(Math.max(0,v)/mx*100).toFixed(1)+'%',rem=cap-eat,warn=rem<=Math.max(300,cap*.15);
-  $('#bar').style.width=pc(eat);$('#bar').style.background=eat>cap?'var(--bad)':warn?'#f08a3c':'';
+function renderBar(eat,t,burn){
+  const cap=t.cap,td=t.tdee,net=eat-burn;
+  if(!cap){$('#bar').style.width='0';$('#burn-bar').style.width='0';$('#marks').innerHTML='';$('#hint').textContent='';$('#rec').innerHTML='';return}
+  const mx=Math.max(td||0,cap,eat)*1.05,pc=v=>(Math.max(0,v)/mx*100).toFixed(2)+'%',rem=cap-net,warn=rem<=Math.max(300,cap*.15);
+  $('#bar').style.width=pc(eat);$('#bar').style.background='var(--ac)';$('#burn-bar').style.left=pc(Math.max(0,net));$('#burn-bar').style.width=pc(Math.min(Math.max(0,burn),Math.max(0,eat)));
   $('#marks').innerHTML=`<u style="left:${pc(cap)}"></u><span style="left:${pc(cap)};transform:translateX(-100%)">建議 ${esc(cap)}</span>`+(td?`<u style="left:${pc(td)}"></u><span style="left:${pc(td)};transform:translateX(-100%)">TDEE ${esc(td)}</span>`:'');
-  $('#hint').textContent=td&&eat>td?'已超過估算 TDEE':eat>cap?'已超過建議 '+Math.round(eat-cap)+' kcal':warn?'快超標，只剩 '+Math.round(rem)+' kcal':'';
-  $('#hint').style.color=eat>cap?'var(--bad)':'#f08a3c';
+  $('#hint').textContent=td&&net>td?'已超過估算 TDEE':net>cap?'已超過建議 '+Math.round(net-cap)+' kcal':warn?'快超標，只剩 '+Math.round(rem)+' kcal':'';
+  $('#hint').style.color=net>cap?'var(--bad)':'#f08a3c';
   renderRec(warn,rem)
 }
 // 快超標或已超標時，從食物資料庫挑「低熱量、高蛋白」的品項

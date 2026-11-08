@@ -1,5 +1,5 @@
 // 本機原型，非完整正式版：核心資產必備；圖示 PNG 缺少時不阻止安裝。
-const CACHE='feifei-lite-v1';
+const CACHE='feifei-lite-v2';
 const CORE=['./','index.html','manifest.json','icon.svg','workout-ui.js'];
 const OPTIONAL=['icon-192.png','icon-512.png','apple-touch-icon.png'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
