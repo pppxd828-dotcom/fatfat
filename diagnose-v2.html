@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>肥肥｜只讀診斷</title><style>
+:root{color-scheme:dark;--bg:#10151b;--panel:#1a222b;--text:#edf3f7;--sub:#b5c4cf;--line:#344655;--accent:#8bd0dd}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,sans-serif}main{max-width:680px;margin:auto;padding:32px 20px 48px}h1{font-size:1.75rem;line-height:1.2;margin:6px 0 12px}p{margin:8px 0 16px}.eyebrow{color:var(--accent);font-weight:700;letter-spacing:.05em}.panel{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:20px;margin:24px 0}.sub{color:var(--sub)}label{display:block;font-weight:600;margin-top:16px}input{width:100%;min-height:48px;background:#10171d;color:var(--text);border:1px solid #526878;border-radius:8px;padding:10px 12px;margin-top:6px;font-size:16px}button{width:100%;min-height:48px;background:var(--accent);border:0;border-radius:8px;color:#10252a;font-size:16px;font-weight:700;margin-top:20px}button:disabled{opacity:.6}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:15px/1.65 system-ui,sans-serif;margin:12px 0 0}button:focus-visible,input:focus-visible{outline:3px solid #ffe397;outline-offset:3px}
+</style></head><body><main><div class="eyebrow">肥肥 · 檢查工具</div><h1>只讀連線診斷</h1><p class="sub">檢查飲食資料的讀取與回應格式，不新增飲水、食物或運動紀錄，也不會觸發待同步佇列。</p><div class="panel"><label for="date">檢查日期</label><input type="date" id="date"><label for="password">通關密碼（選填）</label><input id="password" type="password" autocomplete="off" placeholder="留空則使用此網站已儲存的密碼"><p class="sub">密碼只用於這次原有的 Apps Script 請求，不會顯示在診斷結果中。</p><button id="run">開始診斷</button></div><div class="panel" aria-live="polite"><strong>診斷結果</strong><pre id="result">尚未開始</pre><div id="details" hidden><p class="sub">原始回應可能含私人資訊，請先自行檢查；分享前遮住密碼、網址或個人資料。</p><button type="button" id="showraw">顯示原始回應</button><pre id="raw" hidden></pre></div></div><p class="sub">請先檢查畫面無個人資料，再分享診斷結果截圖。請勿清除網站資料或重新安裝 App。</p></main>
+<script>
+const API="https://script.google.com/macros/s/AKfycbz2EAa0ohAnxE86AxbB_RBuLjHRDRRtGiH0Y8kAknLgPo1KwzqtY1whlcouhFX-iCGA/exec";
+const $=x=>document.getElementById(x);
+const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const pt=k=>parts.find(x=>x.type===k).value;$('date').value=`${pt('year')}-${pt('month')}-${pt('day')}`;
+let rawResponse='';
+$('showraw').onclick=()=>{ $('raw').textContent=rawResponse.slice(0,2000)+(rawResponse.length>2000?'\n（僅顯示前 2000 字）':''); $('raw').hidden=false; };
+$('run').onclick=async()=>{
+ rawResponse=''; $('details').hidden=true; $('raw').hidden=true; $('raw').textContent='';
+ let pw=$('password').value; try{if(!pw)pw=localStorage.getItem('pw')||''}catch(e){}
+ const date=$('date').value;if(!date){$('result').textContent='請選擇日期。';return}if(!pw){$('result').textContent='找不到已儲存的密碼，請在本頁輸入通關密碼。';return}
+ $('run').disabled=true;let lines=['日期：'+date,'測試操作：load（讀取）'];const show=()=>{$('result').textContent=lines.join('\n')};show();let stage='網路請求';
+ try{
+  const r=await fetch(API,{method:'POST',body:JSON.stringify({act:'load',date,pw})});pw='';$('password').value='';
+  lines.push('網路回應：HTTP '+r.status,'Content-Type：'+(r.headers.get('content-type')||'未提供'));show();
+  stage='讀取回應';const text=await r.text();lines.push('回應大小：'+text.length+' 字元');
+  stage='解析 JSON';let j;try{j=JSON.parse(text)}catch(e){lines.push('JSON 解析：失敗','回應外觀：'+(/^\s*</.test(text)?'類似 HTML 或 XML':'不是有效 JSON'),'請點下方按鈕查看原始回應。');rawResponse=text;$('details').hidden=false;show();return}
+  lines.push('JSON 解析：成功');if(!j||typeof j!=='object'||Array.isArray(j)){lines.push('資料格式：不是預期的物件');show();return}
+  if(j.error){lines.push('Apps Script 回報錯誤：'+String(j.error));show();return}
+  lines.push('食物資料：'+(Array.isArray(j.foods)?'格式正常':'格式異常'), '飲食紀錄：'+(Array.isArray(j.log)?'格式正常':'格式異常'), '身體資料：'+(Array.isArray(j.body)?'格式正常':'格式異常'), '飲水資料：'+(Array.isArray(j.water)?'格式正常':'無法讀取'));
+  if(j.waterError)lines.push('飲水讀取錯誤：'+String(j.waterError));
+  lines.push('此工具未顯示食物名稱、體重或其他資料內容。');show();
+ }catch(e){pw='';$('password').value='';lines.push(stage+'：失敗','錯誤類型：'+(e.name||'未知'),'瀏覽器訊息：'+String(e.message||e));show()}
+ finally{$('run').disabled=false}
+};</script></body></html>
