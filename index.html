@@ -18,7 +18,7 @@ button{cursor:pointer}button.on,button.pri{background:var(--ac);border-color:var
 header{padding:calc(12px + env(safe-area-inset-top)) 16px 12px;border-bottom:1px solid var(--ln)}
 .big{font-size:52px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:8px}.big small{font-size:15px;color:var(--mu);font-weight:400;margin-left:8px}
 .bar{height:6px;background:var(--ln);border-radius:3px;margin:8px 0}.bar i{display:block;height:100%;background:var(--ac);border-radius:3px;width:0}
-.sub{display:flex;justify-content:space-between;color:var(--mu);font-size:14px}.calorie-values{flex-wrap:wrap;gap:4px 10px}.calorie-values #burn-label{color:#70d0d0}#burn-bar{position:absolute;top:0;height:100%;background:#56b9c5;border-radius:0 3px 3px 0}
+.sub{display:flex;justify-content:space-between;color:var(--mu);font-size:14px}
 section{padding:12px 16px}
 .chips{display:flex;gap:8px;margin-bottom:10px}.chips.scroll{overflow-x:auto;padding-bottom:4px}.chips button{white-space:nowrap;padding:8px 14px}
 .food,.row{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;margin-bottom:6px}
@@ -27,12 +27,11 @@ section{padding:12px 16px}
 h3{font-size:15px;color:var(--mu);font-weight:500;margin:16px 0 8px}
 nav{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;padding:8px 16px calc(8px + env(safe-area-inset-bottom));background:var(--bg);border-top:1px solid var(--ln)}nav button{flex:1}
 dialog{margin:auto 0 0;width:100%;max-width:none;border:0;border-radius:16px 16px 0 0;background:var(--bg);color:var(--tx);padding:16px 16px calc(16px + env(safe-area-inset-bottom));border-top:1px solid var(--ln)}
-dialog{max-height:90dvh;overflow-y:auto}
 dialog::backdrop{background:#000a}dialog input,dialog textarea,dialog select{width:100%;margin:4px 0}
 .step{display:flex;align-items:center;justify-content:center;gap:20px;margin:14px 0}.step b{font-size:30px;min-width:70px;text-align:center}.step button{width:52px;height:52px;font-size:24px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}dd{font-variant-numeric:tabular-nums}
-.bar.m{position:relative;margin-bottom:26px}.bar u{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--tx);opacity:.8}.bar span{position:absolute;top:12px;font-size:12px;color:var(--mu);white-space:nowrap}
+.bar.m{position:relative;margin-bottom:50px}.bar u{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--tx);opacity:.8}.bar span{position:absolute;top:12px;font-size:12px;color:var(--mu);white-space:nowrap}
 .warn{color:var(--bad);margin:10px 0}svg{width:100%;height:50px}
 </style>
 </head>
@@ -42,9 +41,10 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 <header>
 <input type="date" id="dt">
 <div class="big"><span id="rem">—</span><small>kcal 剩餘</small></div>
-<div class="bar m" id="calorie-track" role="img" aria-label="熱量進度"><i id="bar"></i><i id="burn-bar" aria-hidden="true"></i><div id="marks"></div></div>
+<div class="bar m"><i id="bar"></i><div id="marks"></div></div>
+<div id="net" style="color:var(--bad);font-size:14px;margin-bottom:4px"></div>
 <div id="hint" style="font-size:14px;margin-bottom:4px"></div>
-<div class="sub calorie-values"><span id="eat"></span><span id="burn-label"></span><span id="prot"></span></div><div id="energy" style="font-size:14px"></div>
+<div class="sub"><span id="eat"></span><span id="prot"></span></div>
 <div id="rec"></div>
 </header>
 <section id="v1">
@@ -79,9 +79,8 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 <dialog id="dlg"></dialog>
 <script>
 const API='https://script.google.com/macros/s/AKfycbz2EAa0ohAnxE86AxbB_RBuLjHRDRRtGiH0Y8kAknLgPo1KwzqtY1whlcouhFX-iCGA/exec', GOAL={date:'2027-06-30',bf:25,act:1.2,pk:2.2};
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const $=s=>document.querySelector(s), MEALS=['早餐','午餐','晚餐','點心','宵夜'];
-const ymd=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'}).format(d||new Date());
+const ymd=d=>{d=d||new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
 const r1=x=>+(x||0).toFixed(1), num=x=>x===''||x==null?0:+x;
 const h=new Date().getHours();
 let S={foods:[],log:[],body:[],cat:'',date:ymd(),pw:localStorage.pw||'',meal:h<5?'宵夜':h<11?'早餐':h<14?'午餐':h<17?'點心':h<21?'晚餐':'宵夜'};
@@ -134,21 +133,20 @@ $('#water-save-goal').onclick=()=>{const n=Number($('#water-goal').value);if(!Nu
 $('#water-retry').onclick=syncWater;
 
 
-async function api(act,d){const r=await fetch(API,{method:'POST',body:JSON.stringify({...d,act,pw:S.pw})});const j=await r.json();if(j.error){const e=new Error(j.error);e.remote=true;throw e}return j}
+async function api(act,d){const r=await fetch(API,{method:'POST',body:JSON.stringify({...d,act,pw:S.pw})});const j=await r.json();if(j.error)throw new Error(j.error);return j}
 async function flush(){while(Q.length){try{await api(Q[0].act,Q[0].d)}catch(e){return}Q.shift();localStorage.q=JSON.stringify(Q)}}
-async function send(act,d){try{await api(act,d)}catch(e){if(e.message==='auth')return gate();if(act==='add'||act==='body'||act==='food'){Q.push({act,d});localStorage.q=JSON.stringify(Q)}else alert('離線時只能新增，其他操作請連線後再試')}}
+async function send(act,d){try{return await api(act,d)}catch(e){if(e.message==='auth')return gate();if(act==='add'||act==='body'||act==='food'){Q.push({act,d});localStorage.q=JSON.stringify(Q)}else alert('離線時只能新增，其他操作請連線後再試')}}
+function netMsg(m){const t=!m?'':/Failed to fetch|NetworkError|Load failed/i.test(m)?'連不到 Apps Script：網址不對、尚未授權，或部署已失效':/Unexpected token|JSON|did not match the expected pattern/i.test(m)?'Apps Script 回傳的不是資料，通常是尚未授權或部署版本不對（請重新授權並部署新版本）':'伺服器回報：'+m;$('#net').textContent=t?'⚠ '+t+'（目前顯示離線快取）':''}
 function gate(){$('#gate').hidden=false;$('#app').hidden=true}
 $('#pwb').onclick=()=>{S.pw=$('#pw').value;localStorage.pw=S.pw;$('#gate').hidden=true;$('#app').hidden=false;load();syncWater()};
 
-let loadGeneration=0;let exerciseDay={knownKcal:0,pending:true};let foodAvailable=false;
 async function load(){
- const generation=++loadGeneration, date=S.date; foodAvailable=false;exerciseDay={knownKcal:0,pending:true};S.log=[];render();
- await flush(); if(generation!==loadGeneration||date!==S.date)return;
- const waterVersion=waterRevision;
- try{const j=await api('load',{date});if(generation!==loadGeneration||date!==S.date)return;S.foods=j.foods;S.log=j.log;S.body=j.body.sort((a,b)=>a.d<b.d?-1:1);foodAvailable=true;localStorage.c=JSON.stringify({foods:j.foods,body:S.body});if(Array.isArray(j.water)&&waterVersion===waterRevision){WC[date]=j.water;saveWaterCache()}else if(!Array.isArray(j.water))waterProblem='無法讀取飲水紀錄，請確認後端';}
- catch(e){if(generation!==loadGeneration||date!==S.date)return;if(e.message==='auth')return gate();const c=JSON.parse(localStorage.c||'{}');S.foods=c.foods||[];S.body=c.body||[];S.log=[]}
- try{const day=await api('wDay',{date});if(generation!==loadGeneration||date!==S.date)return;if(typeof day.knownKcal!=='number'||!Number.isFinite(day.knownKcal)||typeof day.pending!=='boolean')throw Error('運動熱量格式錯誤');exerciseDay=day}catch(e){if(generation!==loadGeneration||date!==S.date)return;exerciseDay={knownKcal:0,pending:true};}
- render();snap();checkNew()
+  await flush();
+  const waterDate=S.date, waterVersion=waterRevision;
+  netMsg('');
+  try{const j=await api('load',{date:waterDate});S.foods=j.foods;S.log=j.log;S.body=j.body.sort((a,b)=>a.d<b.d?-1:1);localStorage.c=JSON.stringify({foods:j.foods,body:S.body});if(Array.isArray(j.water)&&waterVersion===waterRevision){WC[waterDate]=j.water;saveWaterCache()}else if(!Array.isArray(j.water)){waterProblem='無法讀取飲水紀錄，請確認 Apps Script 已更新及工作表欄位正確。'}}
+  catch(e){if(e.message==='auth')return gate();netMsg(e.message);const c=JSON.parse(localStorage.c||'{}');S.foods=c.foods||[];S.body=c.body||[]}
+  render();snap();checkNew()
 }
 
 function calc(){
@@ -165,29 +163,24 @@ function render(){
   renderWater();
   const eat=S.log.reduce((s,x)=>s+num(x.k),0),pr=S.log.reduce((s,x)=>s+num(x.p),0),t=target();
   $('#dt').value=S.date;$('#eat').textContent='已吃 '+Math.round(eat)+(t.cap?' / '+t.cap:'')+' kcal';$('#prot').textContent='蛋白質 '+Math.round(pr)+(t.prot?' / '+t.prot:'')+' g';
-  const net=eat-exerciseDay.knownKcal, incomplete=!foodAvailable||exerciseDay.pending;
-  $('#eat').textContent=foodAvailable?'攝取 '+Math.round(eat)+' kcal':'食物資料未載入';
-  $('#burn-label').textContent=exerciseDay.pending?'運動待計算（已知 −'+Math.round(exerciseDay.knownKcal)+'）':'運動 −'+Math.round(exerciseDay.knownKcal)+' kcal';
-  $('#energy').textContent=incomplete?'熱量尚不完整':net<0?'淨攝取 '+Math.round(net)+' kcal（運動超過攝取）':'';
-  $('#calorie-track').setAttribute('aria-label',foodAvailable?'食物攝取 '+Math.round(eat)+' 大卡，運動已知扣除 '+Math.round(exerciseDay.knownKcal)+' 大卡，淨攝取 '+Math.round(net)+' 大卡'+(incomplete?'，資料尚不完整':''):'食物資料尚未載入');
-  $('#rem').textContent=t.cap&&foodAvailable?Math.round(t.cap-net):'—';$('#rem').style.color=t.cap&&net>t.cap?'var(--bad)':'';
-  if(foodAvailable)renderBar(eat,t,exerciseDay.knownKcal);else {$('#bar').style.width='0';$('#burn-bar').style.width='0';$('#marks').innerHTML='';$('#hint').textContent='資料尚未完整載入';$('#rec').innerHTML='';}
+  $('#rem').textContent=t.cap?Math.round(t.cap-eat):'—';$('#rem').style.color=t.cap&&eat>t.cap?'var(--bad)':'';
+  renderBar(eat,t);
   $('#meals').innerHTML=MEALS.map(m=>`<button data-m="${m}" class="${m===S.meal?'on':''}">${m}</button>`).join('');
   const cnt={};S.foods.forEach(f=>cnt[cat(f)]=(cnt[cat(f)]||0)+1);const cats=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);
   if(!cats.includes(S.cat))S.cat=cats[0]||'';
-  $('#cats').innerHTML=cats.map(c=>`<button data-c="${esc(c)}" class="${c===S.cat?'on':''}">${esc(c)}</button>`).join('');
+  $('#cats').innerHTML=cats.map(c=>`<button data-c="${c}" class="${c===S.cat?'on':''}">${c}</button>`).join('');
   renderFoods();
-  $('#log').innerHTML=S.log.map((x,i)=>`<div class="row"><div>${esc(x.n)}<small>${esc(x.m)} ・ ${esc(x.q)} 份 ・ ${Math.round(x.k)} kcal</small></div>${x.r?`<button data-l="${i}" data-d="-">−</button><button data-l="${i}" data-d="+">+</button><button data-l="${i}" data-d="x">✕</button>`:'<small>待同步</small>'}</div>`).join('')||(foodAvailable?'<small style="color:var(--mu)">今天還沒有紀錄</small>':'<small style="color:var(--mu)">紀錄尚未載入，請連線確認</small>');
-  const c=t.c;$('#info').innerHTML=c?`<dl><dt>近 7 天平均</dt><dd>${r1(c.w)} kg ・ ${r1(c.bf)}%</dd><dt>瘦體重</dt><dd>${r1(c.lean)} kg</dd><dt>基礎代謝 BMR</dt><dd>${Math.round(c.bmr)} kcal</dd><dt>TDEE</dt><dd>${Math.round(c.tdee)} kcal</dd><dt>今日熱量上限</dt><dd>${esc(t.cap)} kcal</dd><dt>蛋白質目標</dt><dd>${esc(t.prot)} g</dd><dt>${GOAL.bf}% 體脂時體重</dt><dd>${r1(c.tw)} kg</dd><dt>距離 ${GOAL.date}</dt><dd>${c.days} 天</dd></dl>${c.tight?'<p class="warn">依目前進度，'+GOAL.date+' 達標有難度，熱量上限已鎖在基礎代謝。</p>':''}<h3>體重</h3>${spark('w','#f2b441')}<h3>體脂 %</h3>${spark('b','#8a94a3')}`:'<small style="color:var(--mu)">輸入體重與體脂後，這裡會顯示目標明細</small>'
+  $('#log').innerHTML=S.log.map((x,i)=>`<div class="row"><div>${x.n}<small>${x.m} ・ ${x.q} 份 ・ ${Math.round(x.k)} kcal</small></div>${x.r?`<button data-l="${i}" data-d="-">−</button><button data-l="${i}" data-d="+">+</button><button data-l="${i}" data-d="x">✕</button>`:'<small>待同步</small>'}</div>`).join('')||'<small style="color:var(--mu)">今天還沒有紀錄</small>';
+  const c=t.c;$('#info').innerHTML=c?`<dl><dt>近 7 天平均</dt><dd>${r1(c.w)} kg ・ ${r1(c.bf)}%</dd><dt>瘦體重</dt><dd>${r1(c.lean)} kg</dd><dt>基礎代謝 BMR</dt><dd>${Math.round(c.bmr)} kcal</dd><dt>TDEE</dt><dd>${Math.round(c.tdee)} kcal</dd><dt>今日熱量上限</dt><dd>${t.cap} kcal</dd><dt>蛋白質目標</dt><dd>${t.prot} g</dd><dt>${GOAL.bf}% 體脂時體重</dt><dd>${r1(c.tw)} kg</dd><dt>距離 ${GOAL.date}</dt><dd>${c.days} 天</dd></dl>${c.tight?'<p class="warn">依目前進度，'+GOAL.date+' 達標有難度，熱量上限已鎖在基礎代謝。</p>':''}<h3>體重</h3>${spark('w','#f2b441')}<h3>體脂 %</h3>${spark('b','#8a94a3')}`:'<small style="color:var(--mu)">輸入體重與體脂後，這裡會顯示目標明細</small>'
 }
-function renderBar(eat,t,burn){
-  const cap=t.cap,td=t.tdee,net=eat-burn;
-  if(!cap){$('#bar').style.width='0';$('#burn-bar').style.width='0';$('#marks').innerHTML='';$('#hint').textContent='';$('#rec').innerHTML='';return}
-  const mx=Math.max(td||0,cap,eat)*1.05,pc=v=>(Math.max(0,v)/mx*100).toFixed(2)+'%',rem=cap-net,warn=rem<=Math.max(300,cap*.15);
-  $('#bar').style.width=pc(eat);$('#bar').style.background='var(--ac)';$('#burn-bar').style.left=pc(Math.max(0,net));$('#burn-bar').style.width=pc(Math.min(Math.max(0,burn),Math.max(0,eat)));
-  $('#marks').innerHTML=`<u style="left:${pc(cap)}"></u><span style="left:${pc(cap)};transform:translateX(-100%)">建議 ${esc(cap)}</span>`+(td?`<u style="left:${pc(td)}"></u><span style="left:${pc(td)};transform:translateX(-100%)">TDEE ${esc(td)}</span>`:'');
-  $('#hint').textContent=td&&net>td?'已超過估算 TDEE':net>cap?'已超過建議 '+Math.round(net-cap)+' kcal':warn?'快超標，只剩 '+Math.round(rem)+' kcal':'';
-  $('#hint').style.color=net>cap?'var(--bad)':'#f08a3c';
+function renderBar(eat,t){
+  const cap=t.cap,td=t.tdee;
+  if(!cap){$('#bar').style.width='0';$('#marks').innerHTML='';$('#hint').textContent='';$('#rec').innerHTML='';return}
+  const mx=Math.max(td||0,cap,eat)*1.05,pc=v=>(v/mx*100).toFixed(1)+'%',rem=cap-eat,warn=rem<=Math.max(300,cap*.15);
+  $('#bar').style.width=pc(eat);$('#bar').style.background=eat>cap?'var(--bad)':warn?'#f08a3c':'';
+  $('#marks').innerHTML=`<u style="left:${pc(cap)}"></u><span style="left:${pc(cap)};transform:translateX(-100%)">建議 ${cap}</span>`+(td?`<u style="left:${pc(td)}"></u><span style="left:${pc(td)};top:32px;transform:translateX(-100%)">TDEE ${td}</span>`:'');
+  $('#hint').textContent=td&&eat>td?'已超過 TDEE，今天不會減脂':eat>cap?'已超過建議 '+Math.round(eat-cap)+' kcal':warn?'快超標，只剩 '+Math.round(rem)+' kcal':'';
+  $('#hint').style.color=eat>cap?'var(--bad)':'#f08a3c';
   renderRec(warn,rem)
 }
 // 快超標或已超標時，從食物資料庫挑「低熱量、高蛋白」的品項
@@ -199,35 +192,35 @@ function recPick(foods,rem){
 function renderRec(warn,rem){
   if(!warn){$('#rec').innerHTML='';return}
   const r=recPick(S.foods,rem);
-  $('#rec').innerHTML=r.length?`<h3 style="margin:10px 0 6px">${rem>0?'還能吃（剩 '+Math.round(rem)+' kcal）':'若還要吃，選這些'}・低熱量高蛋白</h3><div class="chips scroll">${r.map(([f,i])=>`<button data-f="${i}">${esc(f.n.replace(/^[^｜－]{1,8}[｜－]/,''))} ${esc(f.k)}</button>`).join('')}</div>`:''
+  $('#rec').innerHTML=r.length?`<h3 style="margin:10px 0 6px">${rem>0?'還能吃（剩 '+Math.round(rem)+' kcal）':'若還要吃，選這些'}・低熱量高蛋白</h3><div class="chips scroll">${r.map(([f,i])=>`<button data-f="${i}">${f.n.replace(/^[^｜－]{1,8}[｜－]/,'')} ${f.k}</button>`).join('')}</div>`:''
 }
 function renderFoods(){
   const norm=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/\s+/g,'');
   const toks=String($('#food-search').value).normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean),query=toks.length>0;
   $('#cats').style.display=query?'none':'';
   const matches=S.foods.map((f,i)=>[f,i]).filter(([f])=>query?toks.every(t=>norm(f.n+(f.g||'')).includes(t)):cat(f)===S.cat);
-  $('#foods').innerHTML=(S.more?matches:matches.slice(0,8)).map(([f,i])=>`<button class="food" data-f="${i}"><span>${esc(query?f.n:f.n.replace(S.cat+'｜','').replace(S.cat+'－',''))}<small>${esc(f.s||'')}</small></span><em>${esc(f.k===''?'待確認':f.k+' kcal')}</em></button>`).join('')+(matches.length>8?`<button id="more" class="food" style="justify-content:center;color:var(--mu)">${S.more?'收合 ▴':'顯示全部 '+matches.length+' 項 ▾'}</button>`:'')||(query?'<small style="color:var(--mu)">找不到符合的食物</small>':'');
+  $('#foods').innerHTML=(S.more?matches:matches.slice(0,8)).map(([f,i])=>`<button class="food" data-f="${i}"><span>${query?f.n:f.n.replace(S.cat+'｜','').replace(S.cat+'－','')}<small>${f.s||''}</small></span><em>${f.k===''?'待確認':f.k+' kcal'}</em></button>`).join('')+(matches.length>8?`<button id="more" class="food" style="justify-content:center;color:var(--mu)">${S.more?'收合 ▴':'顯示全部 '+matches.length+' 項 ▾'}</button>`:'')||(query?'<small style="color:var(--mu)">找不到符合的食物</small>':'');
 }
 $('#food-search').addEventListener('input',()=>{S.more=false;renderFoods()});
 function spark(k,c){const v=S.body.filter(b=>b[k]!=='').slice(-30).map(b=>+b[k]);if(v.length<2)return'';const lo=Math.min(...v),hi=Math.max(...v);return`<svg viewBox="0 0 300 50"><polyline fill="none" stroke="${c}" stroke-width="2" points="${v.map((y,i)=>(i/(v.length-1)*300).toFixed(1)+','+(46-(y-lo)/((hi-lo)||1)*42).toFixed(1)).join(' ')}"/></svg>`}
 
 function dlg(html){$('#dlg').innerHTML=html+'<button style="width:100%;margin-top:6px" onclick="$(\'#dlg\').close()">取消</button>';$('#dlg').showModal()}
 async function addLog(f,q){const v=[S.date,S.meal,f.n,q,Math.round(num(f.k)*q),r1(num(f.p)*q),r1(num(f.c)*q),r1(num(f.f)*q)];
-  S.log.push({r:null,m:v[1],n:v[2],q,k:v[4],p:v[5],c:v[6],f:v[7]});render();await send('add',{rows:[v]});load()}
+  const e={r:null,m:v[1],n:v[2],q,k:v[4],p:v[5],c:v[6],f:v[7]};S.log.push(e);render();const r=await send('add',{rows:[v]});if(r&&r.rows){e.r=r.rows[0];render()}}
 function openFood(f){
   if(f.k==='')return openEst(f.n);let q=1;
-  const draw=()=>dlg(`<b>${esc(f.n)}</b><br><small style="color:var(--mu)">${esc(f.s||'')}</small><div class="step"><button id="m">−</button><b>${q}</b><button id="p">+</button></div><p style="text-align:center">${Math.round(f.k*q)} kcal ・ 蛋白質 ${r1(num(f.p)*q)} g</p><button class="pri" id="ok" style="width:100%">記錄到${S.meal}</button>`);
+  const draw=()=>dlg(`<b>${f.n}</b><br><small style="color:var(--mu)">${f.s||''}</small><div class="step"><button id="m">−</button><b>${q}</b><button id="p">+</button></div><p style="text-align:center">${Math.round(f.k*q)} kcal ・ 蛋白質 ${r1(num(f.p)*q)} g</p><button class="pri" id="ok" style="width:100%">記錄到${S.meal}</button>`);
   draw();$('#dlg').onclick=e=>{const i=e.target.id;if(i==='m'&&q>.5){q-=.5;draw()}if(i==='p'){q+=.5;draw()}if(i==='ok'){$('#dlg').close();addLog(f,q)}}
 }
 function shrink(file){return new Promise(ok=>{const i=new Image();i.onload=()=>{const s=Math.min(1,1024/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*s;c.height=i.height*s;c.getContext('2d').drawImage(i,0,0,c.width,c.height);ok(c.toDataURL('image/jpeg',.8).split(',')[1])};i.src=URL.createObjectURL(file)})}
 function openEst(name){
   const cats=[...new Set(S.foods.map(cat))].concat('其他');
-  dlg(`<b>AI 估算</b><textarea id="tx" rows="2" placeholder="描述，例如：清心福全 烏龍綠茶 中杯 半糖">${esc(name||'')}</textarea><input id="im" type="file" accept="image/*"><button class="pri" id="go" style="width:100%;margin:6px 0">估算</button><div id="rs"></div>`);
+  dlg(`<b>AI 估算</b><textarea id="tx" rows="2" placeholder="描述，例如：清心福全 烏龍綠茶 中杯 半糖">${name||''}</textarea><input id="im" type="file" accept="image/*"><button class="pri" id="go" style="width:100%;margin:6px 0">估算</button><div id="rs"></div>`);
   $('#dlg').onclick=async e=>{
     if(e.target.id==='go'){e.target.disabled=true;e.target.textContent='估算中…';
       try{const f=$('#im').files[0],r=await api('est',{text:$('#tx').value,img:f?await shrink(f):'',mime:'image/jpeg'});
-        $('#rs').innerHTML=`<input id="en" value="${esc(r.name)}"><input id="es" value="${esc(r.serving||'')}"><div class="grid"><input id="ek" type="number" value="${esc(r.kcal)}" placeholder="kcal"><input id="ep" type="number" value="${esc(r.p)}" placeholder="蛋白質"><input id="ec" type="number" value="${esc(r.c)}" placeholder="碳水"><input id="ef" type="number" value="${esc(r.f)}" placeholder="脂肪"></div><select id="eg">${cats.map(c=>`<option ${c===S.cat?'selected':''}>${esc(c)}</option>`).join('')}</select><button class="pri" id="cf" style="width:100%;margin-top:6px">確認並記錄 1 份</button>`}
-      catch(x){$('#rs').innerHTML='<p class="warn">'+esc(x.message)+'</p>'}e.target.disabled=false;e.target.textContent='重新估算'}
+        $('#rs').innerHTML=`<input id="en" value="${r.name}"><input id="es" value="${r.serving||''}"><div class="grid"><input id="ek" type="number" value="${r.kcal}" placeholder="kcal"><input id="ep" type="number" value="${r.p}" placeholder="蛋白質"><input id="ec" type="number" value="${r.c}" placeholder="碳水"><input id="ef" type="number" value="${r.f}" placeholder="脂肪"></div><select id="eg">${cats.map(c=>`<option ${c===S.cat?'selected':''}>${c}</option>`).join('')}</select><button class="pri" id="cf" style="width:100%;margin-top:6px">確認並記錄 1 份</button>`}
+      catch(x){$('#rs').innerHTML='<p class="warn">'+x.message+'</p>'}e.target.disabled=false;e.target.textContent='重新估算'}
     if(e.target.id==='cf'){let n=$('#en').value;if(!n.includes('估算'))n+='（估算）';
       const f={n,s:$('#es').value,k:+$('#ek').value,p:+$('#ep').value,c:+$('#ec').value,f:+$('#ef').value,g:$('#eg').value};
       S.foods.push(f);markSeen([f.n]);$('#dlg').close();send('food',{vals:[f.n,f.s,f.k,f.p,f.c,f.f,f.g]});addLog(f,1)}}
@@ -245,7 +238,7 @@ function checkNew(){
 }
 function askLog(items,msg){
   if(!items.length)return;
-  dlg(`<b>${esc(msg)}</b><div style="color:var(--mu);font-size:14px;margin:4px 0 8px">勾選這餐吃了哪些，加入 ${esc(S.date)} 的記錄；沒吃的不用勾，按取消即可</div><select id="lm">${MEALS.map(m=>`<option ${m===S.meal?'selected':''}>${m}</option>`).join('')}</select><div style="max-height:45vh;overflow-y:auto;margin:8px 0">${items.map((v,i)=>`<label class="row"><input type="checkbox" data-i="${i}" style="width:auto"><div>${esc(v[0])}<small>${esc(v[2])} kcal ・ ${esc(v[6]||'')}</small></div><input type="number" data-q="${i}" value="1" step=".5" min=".5" inputmode="decimal" style="width:64px"></label>`).join('')}</div><button id="la" style="width:100%;margin-bottom:6px">全選</button><button class="pri" id="lg" style="width:100%">加入記錄</button>`);
+  dlg(`<b>${msg}</b><div style="color:var(--mu);font-size:14px;margin:4px 0 8px">勾選這餐吃了哪些，加入 ${S.date} 的記錄；沒吃的不用勾，按取消即可</div><select id="lm">${MEALS.map(m=>`<option ${m===S.meal?'selected':''}>${m}</option>`).join('')}</select><div style="max-height:45vh;overflow-y:auto;margin:8px 0">${items.map((v,i)=>`<label class="row"><input type="checkbox" data-i="${i}" style="width:auto"><div>${v[0]}<small>${v[2]} kcal ・ ${v[6]||''}</small></div><input type="number" data-q="${i}" value="1" step=".5" min=".5" inputmode="decimal" style="width:64px"></label>`).join('')}</div><button id="la" style="width:100%;margin-bottom:6px">全選</button><button class="pri" id="lg" style="width:100%">加入記錄</button>`);
   $('#dlg').onclick=async e=>{
     if(e.target.id==='la')document.querySelectorAll('#dlg [data-i]').forEach(c=>c.checked=true);
     if(e.target.id==='lg'){
@@ -253,7 +246,7 @@ function askLog(items,msg){
       document.querySelectorAll('#dlg [data-i]').forEach(c=>{if(!c.checked)return;const v=items[c.dataset.i],q=Math.max(.5,+document.querySelector('#dlg [data-q="'+c.dataset.i+'"]').value||1);
         rows.push([S.date,meal,v[0],q,Math.round(num(v[2])*q),r1(num(v[3])*q),r1(num(v[4])*q),r1(num(v[5])*q)])});
       if(!rows.length)return alert('請至少勾選一項');
-      $('#dlg').close();rows.forEach(v=>S.log.push({r:null,m:v[1],n:v[2],q:v[3],k:v[4],p:v[5],c:v[6],f:v[7]}));render();await send('add',{rows});load()}}
+      $('#dlg').close();const es=rows.map(v=>({r:null,m:v[1],n:v[2],q:v[3],k:v[4],p:v[5],c:v[6],f:v[7]}));S.log.push(...es);render();const r=await send('add',{rows});if(r&&r.rows){es.forEach((e,i)=>e.r=r.rows[i]);render()}}}
 }
 function openImport(){
   const miss=S.foods.filter(f=>f.k==='').map(f=>f.n);let items=[];
@@ -265,15 +258,56 @@ function openImport(){
         if(hit&&hit.k!=='')return null;
         if(hit){n=hit.n;if(est)s+='（估算）'}else if(est&&!n.includes('估算'))n+='（估算）';
         return[n,s,+x.kcal||0,+x.p||0,+x.c||0,+x.f||0,x.cat||'其他']}).filter(Boolean);
-      $('#ip').innerHTML=items.map(v=>`<div class="row"><div>${esc(v[0])}<small>${esc(v[1])} ・ ${esc(v[2])} kcal ・ ${esc(v[6])}</small></div></div>`).join('')+(items.length?`<button class="pri" id="im2" style="width:100%">匯入 ${items.length} 筆</button>`:'<small>這些食物資料庫都已有熱量，沒有要匯入的</small>')}
+      $('#ip').innerHTML=items.map(v=>`<div class="row"><div>${v[0]}<small>${v[1]} ・ ${v[2]} kcal ・ ${v[6]}</small></div></div>`).join('')+(items.length?`<button class="pri" id="im2" style="width:100%">匯入 ${items.length} 筆</button>`:'<small>這些食物資料庫都已有熱量，沒有要匯入的</small>')}
       catch(x){$('#ip').innerHTML='<p class="warn">格式讀不出來，請確認貼的是 Gemini 回覆的 JSON</p>'}}
     if(i==='im2'){e.target.disabled=true;try{const r=await api('foods',{items});markSeen(items.map(v=>v[0]));$('#dlg').close();await load();askLog(items,'匯入完成：新增 '+r.added+'、補齊 '+r.filled+'、略過 '+r.skipped+' 筆')}catch(x){alert(x.message);e.target.disabled=false}}}
 }
+// ---- 運動（輕量版）：讀「健身計畫」的 C_ 課表，寫回同一張課表 ----
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let W={names:[],name:localStorage.wName||'',c:null,rest:0};
+async function loadW(){
+  try{
+    if(!W.names.length)W.names=(await api('wCourses',{})).names;
+    if(!W.names.includes(W.name))W.name=W.names[0]||'';
+    W.c=W.name?await api('wLoad',{name:W.name}):null;
+  }catch(e){if(e.message==='auth')return gate();$('#wbody').innerHTML='<p class="warn">'+esc(e.message)+'</p>';return}
+  renderW()
+}
+const lk=a=>(a.links||[]).map(l=>`<a href="${esc(l.u)}" target="_blank" rel="noopener noreferrer" style="color:var(--ac);margin-right:12px">▶ ${esc(l.t)}</a>`).join('');
+function renderW(){
+  const c=W.c,started=c&&c.date===ymd();
+  $('#wnames').innerHTML=W.names.map(n=>`<button data-wa="pick" data-n="${esc(n)}" class="${n===W.name?'on':''}">${esc(n.slice(2))}</button>`).join('');
+  if(!c){$('#wbody').innerHTML='';return}
+  if(!started){
+    $('#wbody').innerHTML=`<button class="pri" data-wa="start" style="width:100%;margin-bottom:10px">開始訓練</button><small style="color:var(--mu)">開始時會先把課表上次的成績存進成長紀錄，再清空課表</small><h3>本課表</h3>`+c.acts.map(a=>`<div class="row"><div>${esc(a.name)}<small>上次：${esc(a.sets[0].last||'—')}</small><div>${lk(a)}</div></div><small>${a.sets.length} 組</small></div>`).join('');
+    return
+  }
+  $('#wbody').innerHTML=c.acts.map(a=>`<div class="row" style="display:block;margin-bottom:10px"><b>${esc(a.name)}</b><small>${esc(a.muscle)}　上次：${esc(a.sets[0].last||'—')}</small><div style="margin:6px 0 2px">${lk(a)}</div>`+a.sets.map(s=>{
+    if(s.done)return `<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><span style="flex:1">第 ${s.n} 組　✓ ${esc(s.w)} kg × ${esc(s.r)}</span><button data-wa="undo" data-row="${s.row}">↩</button></div>`;
+    const m=String(s.last).match(/([\d.]+)\s*kg\s*[×x]\s*(\d+)/),dw=s.w!==''?s.w:m?m[1]:'',dr=s.r!==''?s.r:m?m[2]:'';
+    return `<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><span style="width:46px">第${s.n}組</span><input id="w${s.row}" type="number" step=".5" inputmode="decimal" value="${esc(dw)}" placeholder="kg" style="flex:1;min-width:0"><input id="r${s.row}" type="number" inputmode="numeric" value="${esc(dr)}" placeholder="次" style="width:64px"><button class="pri" data-wa="set" data-row="${s.row}">完成</button></div>`}).join('')+'</div>').join('')+`<button class="pri" data-wa="finish" style="width:100%">結束訓練（存入成長紀錄）</button>`
+}
+async function wAct(t){
+  const a=t.dataset.wa,today=ymd();
+  try{
+    if(a==='pick'){W.name=t.dataset.n;localStorage.wName=W.name;return loadW()}
+    t.disabled=true;
+    if(a==='start')W.c=await api('wStart',{name:W.name,date:today});
+    if(a==='set'){const row=+t.dataset.row,w=$('#w'+row).value,r=$('#r'+row).value;if(w===''||r===''){t.disabled=false;return alert('請輸入重量與次數')}
+      await api('wSet',{name:W.name,row,w:+w,r:+r,p:''});W.rest=Date.now()+90000;W.c=await api('wLoad',{name:W.name})}
+    if(a==='undo'){await api('wUndo',{name:W.name,row:+t.dataset.row});W.c=await api('wLoad',{name:W.name})}
+    if(a==='finish'){const r=await api('wFinish',{name:W.name,date:today});alert('已存入成長紀錄：新增 '+r.written+'、更新 '+r.updated+' 筆')}
+  }catch(e){if(e.message==='auth')return gate();alert(e.message)}
+  renderW()
+}
+setInterval(()=>{const s=Math.ceil((W.rest-Date.now())/1000);$('#wrest').textContent=s>0?'休息 '+s+' 秒':''},500);
 document.addEventListener('click',async e=>{const t=e.target.closest('button');if(!t)return;const d=t.dataset;
   if(d.m){S.meal=d.m;render()}if(d.c){S.cat=d.c;S.more=false;render()}if(d.f)openFood(S.foods[d.f]);
   if(d.v){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b===t));$('#v1').hidden=d.v!=='v1';$('#v2').hidden=d.v!=='v2';$('#v3').hidden=d.v!=='v3';if(d.v==='v3')loadW()}
-  if(d.l){const x=S.log[d.l],u=x.q||1,q=d.d==='+'?x.q+.5:x.q-.5;
-    if(d.d==='x'||q<=0){await send('del',{row:x.r})}else await send('set',{row:x.r,vals:[S.date,x.m,x.n,q,Math.round(x.k/u*q),r1(num(x.p)/u*q),r1(num(x.c)/u*q),r1(num(x.f)/u*q)]});load()}
+  if(d.l){const i=+d.l,x=S.log[i],u=x.q||1,q=d.d==='+'?x.q+.5:x.q-.5,old={...x};
+    if(d.d==='x'||q<=0){S.log.splice(i,1);render();if(!await send('del',{row:old.r})){S.log.splice(i,0,old);render()}}
+    else{Object.assign(x,{q,k:Math.round(old.k/u*q),p:r1(num(old.p)/u*q),c:r1(num(old.c)/u*q),f:r1(num(old.f)/u*q)});render();
+      if(!await send('set',{row:old.r,vals:[S.date,old.m,old.n,q,x.k,x.p,x.c,x.f]})){Object.assign(x,old);render()}}}
   if(t.id==='more'){S.more=!S.more;renderFoods()}if(d.wa)wAct(t);if(t.id==='newf')openEst('');if(t.id==='impf')openImport();
   if(t.id==='sv'){const w=+$('#w').value,b=+$('#bf').value;if(!w||!b)return alert('請輸入體重與體脂');await send('body',{v:[S.date,w,b,null,null,null,null,null]});$('#w').value=$('#bf').value='';await load()}
 });
@@ -282,6 +316,5 @@ addEventListener('online',()=>{load();syncWater()});
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
 if(S.pw)($('#app').hidden=false,load(),syncWater());else gate();
 </script>
-<script src="workout-ui.js"></script>
 </body>
 </html>
