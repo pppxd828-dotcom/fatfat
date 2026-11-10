@@ -32,6 +32,7 @@ dialog::backdrop{background:#000a}dialog input,dialog textarea,dialog select{wid
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}dd{font-variant-numeric:tabular-nums}
 .bar.m{position:relative;margin-bottom:50px}.bar u{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--tx);opacity:.8}.bar span{position:absolute;top:12px;font-size:12px;color:var(--mu);white-space:nowrap}
+[hidden]{display:none!important}
 .warn{color:var(--bad);margin:10px 0}svg{width:100%;height:50px}
 </style>
 </head>
@@ -45,6 +46,7 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 <div id="net" style="color:var(--bad);font-size:14px;margin-bottom:4px"></div>
 <div id="hint" style="font-size:14px;margin-bottom:4px"></div>
 <div class="sub"><span id="eat"></span><span id="prot"></span></div>
+<div id="cd" style="color:var(--mu);font-size:13px;margin-top:2px"></div>
 <div id="rec"></div>
 </header>
 <section id="v1">
@@ -70,6 +72,15 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 <div id="info"></div>
 </section>
 <section id="v3" hidden>
+<div id="cardio" style="background:var(--sf);border:1px solid var(--ln);border-radius:12px;padding:10px 12px;margin-bottom:12px">
+<b>有氧</b><small style="color:var(--mu);margin-left:6px">估算熱量會從當日累積熱量扣除</small>
+<div class="grid" style="margin-top:8px"><select id="cdt"><option>坡度快走</option><option>健身車</option><option>橢圓機</option><option>階梯機</option><option>其他</option></select><input id="cdm" type="number" inputmode="decimal" placeholder="分鐘"></div>
+<div class="grid" id="cdwk" style="margin-top:6px"><input id="cds" type="number" step=".1" inputmode="decimal" placeholder="速度 km/h"><input id="cdi" type="number" step=".5" inputmode="decimal" placeholder="坡度 %"></div>
+<div class="grid" id="cdot" style="margin-top:6px" hidden><select id="cdl"><option value="輕">強度：輕</option><option value="中" selected>強度：中</option><option value="高">強度：高</option></select><input id="cdp" type="number" inputmode="numeric" placeholder="瓦數（健身車選填）"></div>
+<div id="cdv" style="margin:8px 0;color:var(--ac)"></div>
+<button class="pri" id="cdadd" style="width:100%">加入有氧</button>
+<div id="cdlist" style="margin-top:8px"></div>
+</div>
 <div class="chips scroll" id="wnames"></div>
 <div id="wrest" style="color:var(--ac);font-weight:600;margin-bottom:6px"></div>
 <div id="wbody"></div>
@@ -85,6 +96,7 @@ const r1=x=>+(x||0).toFixed(1), num=x=>x===''||x==null?0:+x;
 const h=new Date().getHours();
 let S={foods:[],log:[],body:[],cat:'',date:ymd(),pw:localStorage.pw||'',meal:h<5?'宵夜':h<11?'早餐':h<14?'午餐':h<17?'點心':h<21?'晚餐':'宵夜'};
 let Q=JSON.parse(localStorage.q||'[]');
+S.cardio=[];
 let WQ=JSON.parse(localStorage.waterQueue||'[]'), WC=JSON.parse(localStorage.waterCache||'{}');
 let waterRevision=0, waterSyncing=false, waterProblem='';
 const waterGoal=()=>{const n=Number(localStorage.waterGoal);return Number.isInteger(n)&&n>0&&n<=10000?n:2000};
@@ -144,7 +156,7 @@ async function load(){
   await flush();
   const waterDate=S.date, waterVersion=waterRevision;
   netMsg('');
-  try{const j=await api('load',{date:waterDate});S.foods=j.foods;S.log=j.log;S.body=j.body.sort((a,b)=>a.d<b.d?-1:1);localStorage.c=JSON.stringify({foods:j.foods,body:S.body});if(Array.isArray(j.water)&&waterVersion===waterRevision){WC[waterDate]=j.water;saveWaterCache()}else if(!Array.isArray(j.water)){waterProblem='無法讀取飲水紀錄，請確認 Apps Script 已更新及工作表欄位正確。'}}
+  try{const j=await api('load',{date:waterDate});S.foods=j.foods;S.log=j.log;S.cardio=Array.isArray(j.cardio)?j.cardio:[];S.body=j.body.sort((a,b)=>a.d<b.d?-1:1);localStorage.c=JSON.stringify({foods:j.foods,body:S.body});if(Array.isArray(j.water)&&waterVersion===waterRevision){WC[waterDate]=j.water;saveWaterCache()}else if(!Array.isArray(j.water)){waterProblem='無法讀取飲水紀錄，請確認 Apps Script 已更新及工作表欄位正確。'}}
   catch(e){if(e.message==='auth')return gate();netMsg(e.message);const c=JSON.parse(localStorage.c||'{}');S.foods=c.foods||[];S.body=c.body||[]}
   render();snap();checkNew()
 }
@@ -161,10 +173,12 @@ async function snap(){const c=calc();if(!c||S.date!==ymd()||S.body.some(b=>b.d==
 const cat=f=>f.g||(f.n.match(/^([^｜－]{1,8})[｜－]/)||[])[1]||'其他';
 function render(){
   renderWater();
-  const eat=S.log.reduce((s,x)=>s+num(x.k),0),pr=S.log.reduce((s,x)=>s+num(x.p),0),t=target();
-  $('#dt').value=S.date;$('#eat').textContent='已吃 '+Math.round(eat)+(t.cap?' / '+t.cap:'')+' kcal';$('#prot').textContent='蛋白質 '+Math.round(pr)+(t.prot?' / '+t.prot:'')+' g';
+  const gross=S.log.reduce((s,x)=>s+num(x.k),0),pr=S.log.reduce((s,x)=>s+num(x.p),0),t=target();
+  const burn=S.cardio.reduce((s,x)=>s+num(x.k),0),eat=Math.max(0,gross-burn);
+  $('#dt').value=S.date;$('#eat').textContent=(burn?'淨攝取 ':'已吃 ')+Math.round(eat)+(t.cap?' / '+t.cap:'')+' kcal';$('#prot').textContent='蛋白質 '+Math.round(pr)+(t.prot?' / '+t.prot:'')+' g';
+  $('#cd').textContent=burn?'已吃 '+Math.round(gross)+' − 有氧 '+Math.round(burn)+' kcal（粗估）':'';
   $('#rem').textContent=t.cap?Math.round(t.cap-eat):'—';$('#rem').style.color=t.cap&&eat>t.cap?'var(--bad)':'';
-  renderBar(eat,t);
+  renderBar(eat,t);renderCardio();
   $('#meals').innerHTML=MEALS.map(m=>`<button data-m="${m}" class="${m===S.meal?'on':''}">${m}</button>`).join('');
   const cnt={};S.foods.forEach(f=>cnt[cat(f)]=(cnt[cat(f)]||0)+1);const cats=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);
   if(!cats.includes(S.cat))S.cat=cats[0]||'';
@@ -262,6 +276,33 @@ function openImport(){
       catch(x){$('#ip').innerHTML='<p class="warn">格式讀不出來，請確認貼的是 Gemini 回覆的 JSON</p>'}}
     if(i==='im2'){e.target.disabled=true;try{const r=await api('foods',{items});markSeen(items.map(v=>v[0]));$('#dlg').close();await load();askLog(items,'匯入完成：新增 '+r.added+'、補齊 '+r.filled+'、略過 '+r.skipped+' 筆')}catch(x){alert(x.message);e.target.disabled=false}}}
 }
+// ---- 有氧：估算熱量（與後端同一公式），加入後從當日累積熱量扣除 ----
+const CMET={'健身車':{'輕':4,'中':6,'高':10.8},'橢圓機':{'輕':2.8,'中':5,'高':9},'階梯機':{'輕':5.5,'中':9.3,'高':11},'其他':{'輕':2.8,'中':4,'高':6}};
+function kgOn(d){const r=S.body.filter(b=>b.d<=d&&b.w!==''&&num(b.w)>20);return r.length?num(r[r.length-1].w):null}
+function cdRead(){return{t:$('#cdt').value,min:$('#cdm').value,sp:$('#cds').value,inc:$('#cdi').value,int:$('#cdl').value,w:$('#cdp').value}}
+function cdEst(d,kg){
+  const min=+d.min;if(!(min>=1&&min<=1440))return null;
+  let met;
+  if(d.t==='坡度快走'){const sp=+d.sp,g=d.inc===''?0:+d.inc;if(!(sp>=.1&&sp<=30)||!(g>=0&&g<=40))return null;const m=sp*1000/60;met=(.1*m+1.8*m*(g/100)+3.5)/3.5}
+  else if(d.t==='健身車'&&d.w!==''){const w=+d.w;if(!(w>=1&&w<=1000))return null;met=(1.8*(w*6.118)/kg+7)/3.5}
+  else met=CMET[d.t][d.int];
+  return Math.max(0,(met-1)*kg*min/60)
+}
+function renderCardio(){
+  const d=cdRead(),walk=d.t==='坡度快走';$('#cdwk').hidden=!walk;$('#cdot').hidden=walk;$('#cdp').hidden=d.t!=='健身車';
+  const kg=kgOn(S.date),k=kg?cdEst(d,kg):null;
+  $('#cdv').textContent=!kg?'請先在「身體」頁輸入體重才能估算':k==null?'':'預估消耗約 '+Math.round(k)+' kcal（'+S.date+'，體重 '+kg+' kg）';
+  $('#cdlist').innerHTML=S.cardio.map((x,i)=>`<div class="row"><div>${esc(x.t)} ${esc(x.min)} 分<small>${x.t==='坡度快走'?esc(x.sp)+' km/h ・ 坡度 '+esc(x.inc||0)+'%':x.w!==''&&x.w!=null?esc(x.w)+' W':'強度 '+esc(x.int)} ・ 約 ${Math.round(x.k)} kcal</small></div>${x.pending?'<small>待同步</small>':`<button data-cdel="${i}">✕</button>`}</div>`).join('')
+}
+async function cdAdd(t){
+  const d=cdRead(),kg=kgOn(S.date),k=kg?cdEst(d,kg):null;
+  if(!kg)return alert('請先在「身體」頁輸入體重');if(k==null)return alert('請填寫分鐘與速度／強度');
+  const id=(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(16).slice(2)),e={id,t:d.t,min:+d.min,sp:d.sp,inc:d.inc,int:d.int,w:d.w,k:Math.round(k),pending:1};
+  t.disabled=true;S.cardio.push(e);render();
+  try{const r=await api('cardioAdd',{id,date:S.date,d});e.k=r.kcal!=null?r.kcal:e.k;delete e.pending;$('#cdm').value='';render()}
+  catch(x){S.cardio=S.cardio.filter(y=>y!==e);render();if(x.message==='auth')gate();else alert('有氧沒有存成功：'+x.message+'\n（若是「未知的操作」，請更新 Apps Script 並重新部署新版本）')}
+  t.disabled=false
+}
 // ---- 運動（輕量版）：讀「健身計畫」的 C_ 課表，寫回同一張課表 ----
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let W={names:[],name:localStorage.wName||'',c:null,rest:0};
@@ -301,7 +342,10 @@ async function wAct(t){
   renderW()
 }
 setInterval(()=>{const s=Math.ceil((W.rest-Date.now())/1000);$('#wrest').textContent=s>0?'休息 '+s+' 秒':''},500);
+['cdt','cdm','cds','cdi','cdl','cdp'].forEach(i=>{$('#'+i).addEventListener('input',renderCardio);$('#'+i).addEventListener('change',renderCardio)});
 document.addEventListener('click',async e=>{const t=e.target.closest('button');if(!t)return;const d=t.dataset;
+  if(t.id==='cdadd')return cdAdd(t);
+  if(d.cdel!==undefined){const i=+d.cdel,x=S.cardio[i];if(!x||x.pending)return;S.cardio.splice(i,1);render();try{await api('cardioDel',{id:x.id})}catch(err){S.cardio.splice(i,0,x);render();alert('刪除失敗：'+err.message)}return}
   if(d.m){S.meal=d.m;render()}if(d.c){S.cat=d.c;S.more=false;render()}if(d.f)openFood(S.foods[d.f]);
   if(d.v){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b===t));$('#v1').hidden=d.v!=='v1';$('#v2').hidden=d.v!=='v2';$('#v3').hidden=d.v!=='v3';if(d.v==='v3')loadW()}
   if(d.l){const i=+d.l,x=S.log[i],u=x.q||1,q=d.d==='+'?x.q+.5:x.q-.5,old={...x};
