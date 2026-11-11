@@ -65,6 +65,7 @@ dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px}dt{color:var(--mu)}d
 <button id="newf" style="width:100%;margin-top:6px">＋ 新食物 / 拍照估算</button>
 <button id="impf" style="width:100%;margin-top:6px">匯入 Gemini 估算結果</button>
 <h3>已記錄</h3><div id="log"></div>
+<button id="savec" style="width:100%;margin-top:6px">把一餐存成常用組合</button>
 </section>
 <section id="v2" hidden>
 <div class="grid"><input id="w" type="number" step="0.1" inputmode="decimal" placeholder="體重 kg"><input id="bf" type="number" step="0.1" inputmode="decimal" placeholder="體脂 %"></div>
@@ -96,7 +97,7 @@ const r1=x=>+(x||0).toFixed(1), num=x=>x===''||x==null?0:+x;
 const h=new Date().getHours();
 let S={foods:[],log:[],body:[],cat:'',date:ymd(),pw:localStorage.pw||'',meal:h<5?'宵夜':h<11?'早餐':h<14?'午餐':h<17?'點心':h<21?'晚餐':'宵夜'};
 let Q=JSON.parse(localStorage.q||'[]');
-S.cardio=[];
+S.cardio=[];S.combos=[];S.freq={};S.allCats=false;
 let WQ=JSON.parse(localStorage.waterQueue||'[]'), WC=JSON.parse(localStorage.waterCache||'{}');
 let waterRevision=0, waterSyncing=false, waterProblem='';
 const waterGoal=()=>{const n=Number(localStorage.waterGoal);return Number.isInteger(n)&&n>0&&n<=10000?n:2000};
@@ -156,8 +157,8 @@ async function load(){
   await flush();
   const waterDate=S.date, waterVersion=waterRevision;
   netMsg('');
-  try{const j=await api('load',{date:waterDate});S.foods=j.foods;S.log=j.log;S.cardio=Array.isArray(j.cardio)?j.cardio:[];S.body=j.body.sort((a,b)=>a.d<b.d?-1:1);localStorage.c=JSON.stringify({foods:j.foods,body:S.body});if(Array.isArray(j.water)&&waterVersion===waterRevision){WC[waterDate]=j.water;saveWaterCache()}else if(!Array.isArray(j.water)){waterProblem='無法讀取飲水紀錄，請確認 Apps Script 已更新及工作表欄位正確。'}}
-  catch(e){if(e.message==='auth')return gate();netMsg(e.message);const c=JSON.parse(localStorage.c||'{}');S.foods=c.foods||[];S.body=c.body||[]}
+  try{const j=await api('load',{date:waterDate});S.foods=j.foods;S.log=j.log;S.cardio=Array.isArray(j.cardio)?j.cardio:[];S.combos=Array.isArray(j.combos)?j.combos:[];S.freq=j.freq||{};S.body=j.body.sort((a,b)=>a.d<b.d?-1:1);localStorage.c=JSON.stringify({foods:j.foods,body:S.body,combos:S.combos,freq:S.freq});if(Array.isArray(j.water)&&waterVersion===waterRevision){WC[waterDate]=j.water;saveWaterCache()}else if(!Array.isArray(j.water)){waterProblem='無法讀取飲水紀錄，請確認 Apps Script 已更新及工作表欄位正確。'}}
+  catch(e){if(e.message==='auth')return gate();netMsg(e.message);const c=JSON.parse(localStorage.c||'{}');S.foods=c.foods||[];S.body=c.body||[];S.combos=c.combos||[];S.freq=c.freq||{}}
   render();snap();checkNew()
 }
 
@@ -180,9 +181,13 @@ function render(){
   $('#rem').textContent=t.cap?Math.round(t.cap-eat):'—';$('#rem').style.color=t.cap&&eat>t.cap?'var(--bad)':'';
   renderBar(eat,t);renderCardio();
   $('#meals').innerHTML=MEALS.map(m=>`<button data-m="${m}" class="${m===S.meal?'on':''}">${m}</button>`).join('');
-  const cnt={};S.foods.forEach(f=>cnt[cat(f)]=(cnt[cat(f)]||0)+1);const cats=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);
-  if(!cats.includes(S.cat))S.cat=cats[0]||'';
-  $('#cats').innerHTML=cats.map(c=>`<button data-c="${c}" class="${c===S.cat?'on':''}">${c}</button>`).join('');
+  const cnt={},use={};S.foods.forEach(f=>{const k=cat(f);cnt[k]=(cnt[k]||0)+1;use[k]=(use[k]||0)+(S.freq[f.n]||0)});
+  const ranked=Object.keys(cnt).sort((a,b)=>use[b]-use[a]||cnt[b]-cnt[a]),TOP=8;
+  if(!ranked.includes(S.cat)&&S.cat!=='★組合')S.cat=ranked[0]||'';
+  let shown=ranked.slice(0,TOP);if(S.cat!=='★組合'&&!shown.includes(S.cat))shown.push(S.cat);
+  const rest=ranked.filter(c=>!shown.includes(c)),list=S.allCats?[...shown,...rest]:shown;
+  const cb=$('#cats');cb.classList.toggle('scroll',!S.allCats);cb.style.flexWrap=S.allCats?'wrap':'';
+  cb.innerHTML=['★組合',...list].map(c=>`<button data-c="${esc(c)}" class="${c===S.cat?'on':''}">${esc(c)}</button>`).join('')+(rest.length||S.allCats?`<button data-ca="1">${S.allCats?'收合 ▴':'更多 '+rest.length+' ▾'}</button>`:'');
   renderFoods();
   $('#log').innerHTML=S.log.map((x,i)=>`<div class="row"><div>${x.n}<small>${x.m} ・ ${x.q} 份 ・ ${Math.round(x.k)} kcal</small></div>${x.r?`<button data-l="${i}" data-d="-">−</button><button data-l="${i}" data-d="+">+</button><button data-l="${i}" data-d="x">✕</button>`:'<small>待同步</small>'}</div>`).join('')||'<small style="color:var(--mu)">今天還沒有紀錄</small>';
   const c=t.c;$('#info').innerHTML=c?`<dl><dt>近 7 天平均</dt><dd>${r1(c.w)} kg ・ ${r1(c.bf)}%</dd><dt>瘦體重</dt><dd>${r1(c.lean)} kg</dd><dt>基礎代謝 BMR</dt><dd>${Math.round(c.bmr)} kcal</dd><dt>TDEE</dt><dd>${Math.round(c.tdee)} kcal</dd><dt>今日熱量上限</dt><dd>${t.cap} kcal</dd><dt>蛋白質目標</dt><dd>${t.prot} g</dd><dt>${GOAL.bf}% 體脂時體重</dt><dd>${r1(c.tw)} kg</dd><dt>距離 ${GOAL.date}</dt><dd>${c.days} 天</dd></dl>${c.tight?'<p class="warn">依目前進度，'+GOAL.date+' 達標有難度，熱量上限已鎖在基礎代謝。</p>':''}<h3>體重</h3>${spark('w','#f2b441')}<h3>體脂 %</h3>${spark('b','#8a94a3')}`:'<small style="color:var(--mu)">輸入體重與體脂後，這裡會顯示目標明細</small>'
@@ -212,6 +217,7 @@ function renderFoods(){
   const norm=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/\s+/g,'');
   const toks=String($('#food-search').value).normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean),query=toks.length>0;
   $('#cats').style.display=query?'none':'';
+  if(!query&&S.cat==='★組合')return renderCombos();
   const matches=S.foods.map((f,i)=>[f,i]).filter(([f])=>query?toks.every(t=>norm(f.n+(f.g||'')).includes(t)):cat(f)===S.cat);
   $('#foods').innerHTML=(S.more?matches:matches.slice(0,8)).map(([f,i])=>`<button class="food" data-f="${i}"><span>${query?f.n:f.n.replace(S.cat+'｜','').replace(S.cat+'－','')}<small>${f.s||''}</small></span><em>${f.k===''?'待確認':f.k+' kcal'}</em></button>`).join('')+(matches.length>8?`<button id="more" class="food" style="justify-content:center;color:var(--mu)">${S.more?'收合 ▴':'顯示全部 '+matches.length+' 項 ▾'}</button>`:'')||(query?'<small style="color:var(--mu)">找不到符合的食物</small>':'');
 }
@@ -275,6 +281,32 @@ function openImport(){
       $('#ip').innerHTML=items.map(v=>`<div class="row"><div>${v[0]}<small>${v[1]} ・ ${v[2]} kcal ・ ${v[6]}</small></div></div>`).join('')+(items.length?`<button class="pri" id="im2" style="width:100%">匯入 ${items.length} 筆</button>`:'<small>這些食物資料庫都已有熱量，沒有要匯入的</small>')}
       catch(x){$('#ip').innerHTML='<p class="warn">格式讀不出來，請確認貼的是 Gemini 回覆的 JSON</p>'}}
     if(i==='im2'){e.target.disabled=true;try{const r=await api('foods',{items});markSeen(items.map(v=>v[0]));$('#dlg').close();await load();askLog(items,'匯入完成：新增 '+r.added+'、補齊 '+r.filled+'、略過 '+r.skipped+' 筆')}catch(x){alert(x.message);e.target.disabled=false}}}
+}
+// ---- 常用組合：一鍵把多樣食物加進這一餐 ----
+const foodByName=n=>S.foods.find(f=>f.n===n&&f.k!=='');
+function comboCalc(c){let k=0,p=0,miss=[];c.items.forEach(it=>{const f=foodByName(it.n);if(!f)miss.push(it.n);else{k+=num(f.k)*it.q;p+=num(f.p)*it.q}});return{k:Math.round(k),p:Math.round(p),miss}}
+function renderCombos(){
+  $('#foods').innerHTML=S.combos.length?S.combos.map((c,i)=>{const t=comboCalc(c);return `<div class="row"><div>${esc(c.n)}<small>${t.k} kcal ・ 蛋白質 ${t.p} g ・ ${esc(c.items.map(x=>x.n.replace(/^[^｜－]{1,8}[｜－]/,'')+(x.q!==1?'×'+x.q:'')).join('、'))}</small>${t.miss.length?`<small style="color:var(--bad)">找不到：${esc(t.miss.join('、'))}</small>`:''}</div><button class="pri" data-cadd="${i}">加入${esc(S.meal)}</button><button data-cdel2="${i}">✕</button></div>`}).join(''):'<small style="color:var(--mu)">還沒有組合。先把一餐記好，再按下方「把一餐存成常用組合」。</small>'
+}
+async function addCombo(c){
+  const rows=[],miss=[];c.items.forEach(it=>{const f=foodByName(it.n);if(!f)return miss.push(it.n);const q=it.q;rows.push([S.date,S.meal,f.n,q,Math.round(num(f.k)*q),r1(num(f.p)*q),r1(num(f.c)*q),r1(num(f.f)*q)])});
+  if(!rows.length)return alert('組合裡的食物都已不在食物資料庫');
+  const es=rows.map(v=>({r:null,m:v[1],n:v[2],q:v[3],k:v[4],p:v[5],c:v[6],f:v[7]}));S.log.push(...es);render();
+  const r=await send('add',{rows});if(r&&r.rows){es.forEach((e,i)=>e.r=r.rows[i]);render()}
+  if(miss.length)alert('這些食物找不到，已略過：'+miss.join('、'))
+}
+function openSaveCombo(){
+  const draw=meal=>{const items=S.log.filter(x=>x.m===meal);
+    dlg(`<b>存成常用組合</b><div style="color:var(--mu);font-size:14px;margin:4px 0 8px">取今天這一餐的內容，之後一鍵加入</div><select id="sm">${MEALS.map(m=>`<option ${m===meal?'selected':''}>${m}</option>`).join('')}</select><input id="sn" placeholder="組合名稱（例：我的早餐）" maxlength="30">${items.length?`<div style="max-height:40vh;overflow:auto;margin:6px 0">${items.map((x,i)=>`<label style="display:flex;gap:8px;padding:4px 0"><input type="checkbox" data-i="${i}" checked style="width:auto"><span>${esc(x.n)} ×${esc(x.q)}</span></label>`).join('')}</div>`:'<p class="warn">這一餐今天還沒有紀錄</p>'}<button class="pri" id="sc" style="width:100%">儲存組合</button>`);
+    $('#sm').onchange=e=>draw(e.target.value);
+    $('#dlg').onclick=async e=>{if(e.target.id!=='sc')return;
+      const name=$('#sn').value.trim(),sel=[...document.querySelectorAll('#dlg [data-i]')].filter(c=>c.checked).map(c=>items[c.dataset.i]);
+      if(!name)return alert('請輸入組合名稱');if(!sel.length)return alert('請至少勾選一項');
+      if(S.combos.some(c=>c.n===name)&&!confirm('已有同名組合「'+name+'」，要覆蓋嗎？'))return;
+      e.target.disabled=true;
+      try{await api('comboSave',{name,items:sel.map(x=>[x.n,num(x.q)])});S.combos=S.combos.filter(c=>c.n!==name).concat([{n:name,items:sel.map(x=>({n:x.n,q:num(x.q)}))}]);$('#dlg').close();S.cat='★組合';render()}
+      catch(x){e.target.disabled=false;alert('存不成功：'+x.message+'\n（若是「未知的操作」，請更新 Apps Script 並重新部署新版本）')}}};
+  draw(S.meal)
 }
 // ---- 有氧：估算熱量（與後端同一公式），加入後從當日累積熱量扣除 ----
 const CMET={'健身車':{'輕':4,'中':6,'高':10.8},'橢圓機':{'輕':2.8,'中':5,'高':9},'階梯機':{'輕':5.5,'中':9.3,'高':11},'其他':{'輕':2.8,'中':4,'高':6}};
@@ -345,8 +377,11 @@ setInterval(()=>{const s=Math.ceil((W.rest-Date.now())/1000);$('#wrest').textCon
 ['cdt','cdm','cds','cdi','cdl','cdp'].forEach(i=>{$('#'+i).addEventListener('input',renderCardio);$('#'+i).addEventListener('change',renderCardio)});
 document.addEventListener('click',async e=>{const t=e.target.closest('button');if(!t)return;const d=t.dataset;
   if(t.id==='cdadd')return cdAdd(t);
+  if(t.id==='savec')return openSaveCombo();
+  if(d.cadd!==undefined)return addCombo(S.combos[+d.cadd]);
+  if(d.cdel2!==undefined){const c=S.combos[+d.cdel2];if(!c||!confirm('刪除組合「'+c.n+'」？（不影響已記錄的飲食）'))return;S.combos.splice(+d.cdel2,1);render();try{await api('comboDel',{name:c.n})}catch(err){S.combos.splice(+d.cdel2,0,c);render();alert('刪除失敗：'+err.message)}return}
   if(d.cdel!==undefined){const i=+d.cdel,x=S.cardio[i];if(!x||x.pending)return;S.cardio.splice(i,1);render();try{await api('cardioDel',{id:x.id})}catch(err){S.cardio.splice(i,0,x);render();alert('刪除失敗：'+err.message)}return}
-  if(d.m){S.meal=d.m;render()}if(d.c){S.cat=d.c;S.more=false;render()}if(d.f)openFood(S.foods[d.f]);
+  if(d.m){S.meal=d.m;render()}if(d.c){S.cat=d.c;S.more=false;render()}if(d.ca){S.allCats=!S.allCats;render()}if(d.f)openFood(S.foods[d.f]);
   if(d.v){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b===t));$('#v1').hidden=d.v!=='v1';$('#v2').hidden=d.v!=='v2';$('#v3').hidden=d.v!=='v3';if(d.v==='v3')loadW()}
   if(d.l){const i=+d.l,x=S.log[i],u=x.q||1,q=d.d==='+'?x.q+.5:x.q-.5,old={...x};
     if(d.d==='x'||q<=0){S.log.splice(i,1);render();if(!await send('del',{row:old.r})){S.log.splice(i,0,old);render()}}
